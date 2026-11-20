@@ -1,0 +1,13 @@
+{
+  "compilerOptions": {
+    "target": "es2023",
+    "module": "esnext",
+    "moduleResolution": "bundler",
+    "allowImportingTsExtensions": true,
+    "strict": true,
+    "lib": ["es2023", "dom", "dom.iterable"],
+    "skipLibCheck": true,
+    "noEmit": true
+  },
+  "include": ["."]
+}

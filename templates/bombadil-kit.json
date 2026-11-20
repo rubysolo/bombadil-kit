@@ -1,0 +1,32 @@
+{
+  "title": "my-app",
+  "projects": {
+    "web": {
+      "dir": "apps/web",
+      "server": {
+        "command": ["npx", "vite", "--host", "127.0.0.1", "--port", "{port}", "--strictPort"],
+        "env": {
+          "VITE_API_MOCK": "true",
+          "VITE_MOCK_LATENCY_MS": "{latency}",
+          "VITE_MOCK_FAULT_RATE": "{faults}",
+          "VITE_MOCK_FAULT_SEED": "{seed}",
+          "VITE_MOCK_SEED": "{seed}",
+          "VITE_MOCK_REF_DATE": "{refDate}",
+          "VITE_FUZZ": "true"
+        },
+        "port": 5199
+      },
+      "spec": "spec",
+      "signedInCookie": "auth_token=fuzz-session",
+      "viewport": { "width": 390, "height": 844 },
+      "defaults": { "time": "1m", "faults": 0.1, "latency": 50 },
+      "watch": ["apps/web", "packages/ui"],
+      "quiet": ["failed to instrument requested script"],
+      "affected": {
+        "entry": "apps/web/src/main.tsx",
+        "routers": ["apps/web/src/App.tsx"],
+        "always": ["^apps/web/(index\\.html|vite\\.config\\.ts|package\\.json)$"]
+      }
+    }
+  }
+}

@@ -1,0 +1,78 @@
+{
+  "name": "bombadil-kit",
+  "version": "0.1.0",
+  "description": "Bombadil fuzzing toolkit: shared properties, flow runner, diff-aware PR runs, and a findings report.",
+  "license": "UNLICENSED",
+  "type": "module",
+  "bin": {
+    "bombadil-kit": "dist/cli.js"
+  },
+  "exports": {
+    "./spec": "./spec/index.ts",
+    "./faults": {
+      "types": "./dist/app/faults.d.ts",
+      "default": "./dist/app/faults.js"
+    },
+    "./rtk": {
+      "types": "./dist/app/rtk.d.ts",
+      "default": "./dist/app/rtk.js"
+    },
+    "./faker": {
+      "types": "./dist/app/faker.d.ts",
+      "default": "./dist/app/faker.js"
+    },
+    "./console": {
+      "types": "./dist/app/console.d.ts",
+      "default": "./dist/app/console.js"
+    },
+    "./report": {
+      "types": "./dist/report/generate.d.ts",
+      "default": "./dist/report/generate.js"
+    },
+    "./affected": {
+      "types": "./dist/affected/index.d.ts",
+      "default": "./dist/affected/index.js"
+    },
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "dist",
+    "src",
+    "spec",
+    "fonts",
+    "templates",
+    "prompts",
+    "AGENTS.md",
+    "README.md"
+  ],
+  "engines": {
+    "node": ">=22.18"
+  },
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "prepare": "npm run build",
+    "typecheck": "tsc -p tsconfig.json --noEmit && tsc -p spec/tsconfig.json --noEmit",
+    "test": "node --test \"test/*.test.ts\""
+  },
+  "peerDependencies": {
+    "@antithesishq/bombadil": ">=0.7.10 <0.8",
+    "esbuild": ">=0.20",
+    "@reduxjs/toolkit": ">=1.9"
+  },
+  "peerDependenciesMeta": {
+    "esbuild": {
+      "optional": true
+    },
+    "@reduxjs/toolkit": {
+      "optional": true
+    }
+  },
+  "devDependencies": {
+    "@antithesishq/bombadil": "0.7.10",
+    "@types/node": "^24",
+    "esbuild": "^0.25",
+    "typescript": "^5.9",
+    "@reduxjs/toolkit": "^2",
+    "@faker-js/faker": "^9"
+  }
+}

@@ -1,0 +1,166 @@
+# Bombadil fuzzing with bombadil-kit. Copy to .github/workflows/fuzz.yml and
+# adjust the paths, the node version file, and the runner.
+#
+# Nightly on main: every flow, 2 minutes each. The report it uploads
+# (`fuzz-main`) is the baseline for pull requests: its coverage.json maps
+# source files to the flows that render them, and its state.json is what
+# "new" is measured against.
+#
+# On a pull request: only the flows its changes touch (`bombadil-kit
+# affected`), with more time each, reported against the latest nightly. The
+# job fails when the PR's runs find something main's don't. Keep it out of the
+# required checks: a fuzzer can be flaky, and a finding is for a person to
+# read before merging.
+name: fuzz
+
+on:
+  schedule:
+    - cron: '0 9 * * *'
+  workflow_dispatch:
+  pull_request:
+    paths:
+      - apps/web/** # adjust: the app and the packages it renders
+      - bombadil-kit.json
+      - package-lock.json
+      - .github/workflows/fuzz.yml
+
+concurrency:
+  group: fuzz-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+  actions: read
+
+jobs:
+  fuzz:
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    container:
+      # Playwright's image has a Chromium and its libraries; Bombadil drives it.
+      # Match the version to the repo's Playwright, if it has one.
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+    defaults:
+      run:
+        # A container job defaults to sh; the steps use pipefail and arrays.
+        shell: bash
+    env:
+      PR: ${{ github.event.pull_request.number }}
+    steps:
+      - uses: actions/checkout@v7
+        with:
+          fetch-depth: 0 # `affected` diffs against the base branch
+      - uses: actions/setup-node@v7
+        with:
+          node-version-file: package.json
+      - name: install
+        run: |
+          # checkout trusts the workspace only during its own step; the
+          # container runs as root over the runner's files, so git refuses them
+          # after it.
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          npm ci --no-audit --no-fund
+      - name: browser
+        run: |
+          npx playwright install chromium
+          # Bombadil finds Chrome through $CHROME before the usual paths.
+          echo "CHROME=$(node -p "require('playwright-core').chromium.executablePath()")" >> "$GITHUB_ENV"
+
+      # ---- pull requests: the latest nightly is the baseline -------------------
+      - name: find the latest nightly
+        if: github.event_name == 'pull_request'
+        id: nightly
+        uses: actions/github-script@v9
+        with:
+          script: |
+            const { data } = await github.rest.actions.listWorkflowRuns({
+              owner: context.repo.owner, repo: context.repo.repo,
+              workflow_id: 'fuzz.yml', branch: 'main', status: 'success', per_page: 1,
+            });
+            core.setOutput('run', data.workflow_runs[0]?.id ?? '');
+      - name: download it
+        if: github.event_name == 'pull_request' && steps.nightly.outputs.run != ''
+        uses: actions/download-artifact@v8
+        with:
+          name: fuzz-main
+          path: tmp/baseline
+          run-id: ${{ steps.nightly.outputs.run }}
+          github-token: ${{ github.token }}
+
+      - name: pick flows
+        id: plan
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = pull_request ]; then
+            flows="$(npx bombadil-kit affected --base "origin/${{ github.base_ref }}" \
+                      --coverage tmp/baseline/coverage.json 2> >(tee tmp-affected.txt >&2))"
+            n=$(printf '%s\n' "$flows" | grep -c . || true)
+            # About 12 minutes in all, 1 to 3 per flow.
+            per=$(( n > 0 ? 720 / n : 0 )); per=$(( per > 180 ? 180 : per < 60 ? 60 : per ))
+            seed="$PR"
+          else
+            flows="$(npx bombadil-kit list | awk '{print $1}')"
+            n=$(printf '%s\n' "$flows" | grep -c .); per=120; seed=$(( RANDOM ))
+            : > tmp-affected.txt
+          fi
+          {
+            echo "count=$n"
+            echo "time=${per}s"
+            echo "seed=$seed"
+            # shellcheck disable=SC2086 # one --flow per name
+            echo "args=$(printf -- '--flow %s ' $flows)"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: fuzz
+        if: steps.plan.outputs.count != '0'
+        run: |
+          baseline=()
+          [ -f tmp/baseline/state.json ] && baseline=(--baseline tmp/baseline/state.json)
+          # 2 = a property violation; whether that's new is the gate's call.
+          # shellcheck disable=SC2086 # args is a list of flags
+          npx bombadil-kit run --no-sandbox --time "${{ steps.plan.outputs.time }}" \
+            --seed "${{ steps.plan.outputs.seed }}" ${{ steps.plan.outputs.args }} \
+            "${baseline[@]}" || [ $? = 2 ]
+
+      - name: summary
+        if: always() && steps.plan.outputs.count != ''
+        run: |
+          {
+            echo "### Bombadil: ${{ steps.plan.outputs.count }} flow(s), ${{ steps.plan.outputs.time }} each, seed ${{ steps.plan.outputs.seed }}"
+            if [ "${{ github.event_name }}" = pull_request ] && [ -z "${{ steps.nightly.outputs.run }}" ]; then
+              echo "No nightly on main yet: every flow ran, and nothing is gated."
+            fi
+            echo '```'
+            cat tmp-affected.txt 2>/dev/null || true
+            echo '```'
+            if [ -f tmp/bombadil/report/report.json ]; then
+              # shellcheck disable=SC2016 # ${...} is JavaScript's
+              node -e '
+                const r = require("./tmp/bombadil/report/report.json");
+                const s = r.summary;
+                console.log(`**${s.new} new**, ${s.open} open, ${s.quiet} quiet, ${s.closed} closed · ${s.routes[0]}/${s.routes[1]} routes`);
+                for (const f of r.findings.filter((f) => f.status === "new"))
+                  console.log(`- \`${f.id}\` ${f.property} on \`${f.route}\`: ${(f.summary.split("\n")[0] || "").slice(0, 140)}`);
+                console.log("\nDownload the report artifact and open index.html.");
+              '
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - uses: actions/upload-artifact@v7
+        if: always() && hashFiles('tmp/bombadil/report/report.json') != ''
+        with:
+          name: ${{ github.event_name == 'pull_request' && 'fuzz-report' || 'fuzz-main' }}
+          path: tmp/bombadil/report
+          retention-days: ${{ github.event_name == 'pull_request' && 14 || 30 }}
+
+      # Pull requests: fail on what main's nightly hasn't seen. Without a
+      # nightly every finding is "new", so there's nothing to gate on.
+      - name: gate
+        if: github.event_name == 'pull_request' && steps.plan.outputs.count != '0' && steps.nightly.outputs.run != ''
+        run: npx bombadil-kit report --fail-on new
+
+      # The container runs as root on the host's workspace; on a self-hosted
+      # runner, hand the files back or the next checkout can't clean them.
+      - name: release files to the runner user
+        if: always()
+        run: chown -R "$(stat -c %u:%g "$RUNNER_TEMP")" "$GITHUB_WORKSPACE" "$HOME"

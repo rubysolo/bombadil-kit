@@ -1,0 +1,28 @@
+name: ci
+on:
+  push:
+    branches: [main]
+  pull_request:
+permissions:
+  contents: read
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - run: npm ci --no-audit --no-fund
+      - run: npm run typecheck
+      - run: npm test
+      - run: npm run build
+      - name: the packed tarball has what the bin and exports need
+        run: |
+          npm pack --dry-run --json > pack.json
+          node -e '
+            const files = new Set(require("./pack.json")[0].files.map((f) => f.path));
+            const need = ["dist/cli.js", "dist/app/rtk.js", "dist/app/rtk.d.ts", "spec/index.ts", "fonts/rajdhani-latin-700-normal.woff2", "templates/github/fuzz.yml", "prompts/ADOPT.md", "AGENTS.md"];
+            const missing = need.filter((f) => !files.has(f));
+            if (missing.length) { console.error("missing from the package:", missing); process.exit(1); }
+          '
