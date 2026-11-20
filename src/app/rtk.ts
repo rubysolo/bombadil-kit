@@ -15,6 +15,8 @@ import { createFaultInjector, parseFaultConfig } from './faults.ts';
 export interface WithFaultsOptions {
   /** Paths never to fail. Default: /^\/mock\// (the mock's control API). */
   spare?: RegExp[];
+  /** Whether a request changes data, when its method doesn't say; see InjectedFault's `write`. */
+  isWrite?: (method: string, path: string) => boolean;
   /** Called with each fault, e.g. to log it. */
   onFault?: (method: string, path: string, fault: FetchBaseQueryError) => void;
 }
@@ -30,11 +32,11 @@ const requestOf = (args: string | FetchArgs) => {
 export const withFaults = <Args extends string | FetchArgs, Result, ExtraOptions, Meta>(
   baseQuery: BaseQueryFn<Args, Result, FetchBaseQueryError, ExtraOptions, Meta>,
   env: Record<string, unknown>,
-  { spare, onFault }: WithFaultsOptions = {},
+  { spare, isWrite, onFault }: WithFaultsOptions = {},
 ): BaseQueryFn<Args, Result, FetchBaseQueryError, ExtraOptions, Meta> => {
   const config = parseFaultConfig(env);
   if (!config) return baseQuery;
-  const inject = createFaultInjector({ ...config, ...(spare ? { spare } : {}) });
+  const inject = createFaultInjector({ ...config, ...(spare ? { spare } : {}), ...(isWrite ? { isWrite } : {}) });
   return (args: Args, api: BaseQueryApi, extraOptions: ExtraOptions) => {
     const { method, path } = requestOf(args);
     const fault = inject(method, path) as FetchBaseQueryError | undefined;

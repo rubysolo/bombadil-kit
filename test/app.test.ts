@@ -59,10 +59,37 @@ test('createFaultInjector: logs each fault on window.__mockFaults', () => {
   }
 });
 
+test('createFaultInjector: isWrite fills `write`; without it there is none', () => {
+  const g = globalThis as { window?: { __mockFaults?: { write?: boolean }[] } };
+  g.window = {};
+  try {
+    const isWrite = (_method: string, path: string) => /\.(save|delete)\w*$/.test(path);
+    const inject = createFaultInjector({ rate: 1, seed: 1, isWrite });
+    inject('REMOTE', 'OrderController.saveOrder');
+    inject('REMOTE', 'OrderController.getOrders');
+    createFaultInjector({ rate: 1, seed: 1 })('POST', '/orders');
+    assert.deepEqual(g.window.__mockFaults!.map((f) => f.write), [true, false, undefined]);
+    assert.ok(!('write' in g.window.__mockFaults![2]!));
+  } finally {
+    delete g.window;
+  }
+});
+
 // --------------------------------------------------------------------- rtk
 
 const api = {} as BaseQueryApi;
 const ok: BaseQueryFn<string | FetchArgs, string, FetchBaseQueryError> = () => ({ data: 'ok' });
+
+test('withFaults: passes isWrite to the injector', async () => {
+  const g = globalThis as { window?: { __mockFaults?: { write?: boolean }[] } };
+  g.window = {};
+  try {
+    await withFaults(ok, { VITE_MOCK_FAULT_RATE: '1' }, { isWrite: () => true })('/orders', api, {});
+    assert.equal(g.window.__mockFaults![0]!.write, true);
+  } finally {
+    delete g.window;
+  }
+});
 
 test('withFaults: without a rate it is the baseQuery itself', () => {
   assert.equal(withFaults(ok, {}), ok);

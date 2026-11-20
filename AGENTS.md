@@ -33,6 +33,10 @@ Installed as a dependency, this file and the prompts are at
   bugs. List them for the person; don't fix app bugs as part of the
   integration unless asked.
 - Exit codes: `run` gives 0 clean, 2 property violation, 1 anything else.
+- In anything Bombadil bundles (`spec/`, an app's `bombadil/*.ts`), don't
+  both import a name and `export { name } from` the same module: the bundle
+  declares it twice and the spec won't load ("Identifier 'name' has already
+  been declared"). Import it, then `export { name }`.
 
 ## Package layout
 
