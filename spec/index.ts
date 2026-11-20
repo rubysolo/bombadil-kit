@@ -24,17 +24,21 @@ import {
 // Import, then export the bindings: `export { … } from` beside an import of the
 // same names makes Bombadil's bundle declare them twice ("Identifier
 // 'faultInFlight' has already been declared").
-import { faultInFlight, freshFailedWrite, isErrorFault, isWriteFault, type FaultKind, type InjectedFault } from './faults.ts';
+import { isVisible, visibleOutside } from './dom.ts';
+import {
+  faultInFlight,
+  freshFailedWrite,
+  isErrorFault,
+  isWriteFault,
+  spinnerDeadline,
+  type FaultKind,
+  type InjectedFault,
+} from './faults.ts';
 
-export { faultInFlight, freshFailedWrite, isErrorFault, isWriteFault, type FaultKind, type InjectedFault };
+export { faultInFlight, freshFailedWrite, isErrorFault, isWriteFault, spinnerDeadline, type FaultKind, type InjectedFault };
 
 type FaultWindow = Window & { __mockFaults?: InjectedFault[] };
 type ActionGenerator = ReturnType<typeof actions>;
-
-const isVisible = (el: Element) => {
-  const rect = el.getBoundingClientRect();
-  return rect.width > 0 && rect.height > 0;
-};
 
 const cookie = (doc: Document, name: string): string | null => {
   const m = new RegExp(`(?:^|;\\s*)${name}=([^;]*)`).exec(doc.cookie);
@@ -56,11 +60,20 @@ export const errorBoundaryNeverShown = (selector = '[data-testid="error-boundary
 /**
  * A visible loading indicator clears within `within` seconds. On a mock API
  * that answers in milliseconds, one that outlives that is waiting on a
- * request that failed and was never handled.
+ * request that failed and was never handled. Reads `window.__mockFaults`:
+ * a slow fault still in flight adds its `delayMs` to the deadline, and once a
+ * hang was injected the property holds (a hung request spins forever).
+ * `exclude`: spinners inside an element matching it are meant to run long.
  */
-export const spinnersClear = ({ selector = '[role="status"][aria-busy="true"], [role="progressbar"]', within = 15 } = {}) => {
-  const spinning = extract((state) => [...state.document.querySelectorAll(selector)].some(isVisible));
-  return always(now(() => spinning.current).implies(eventually(() => !spinning.current).within(within, 'seconds')));
+export const spinnersClear = ({
+  selector = '[role="status"][aria-busy="true"], [role="progressbar"]',
+  within = 15,
+  exclude,
+}: { selector?: string; within?: number; exclude?: string } = {}) => {
+  const spinning = extract((state) => visibleOutside(state.document.querySelectorAll(selector), exclude));
+  const deadline = extract((state) => spinnerDeadline((state.window as FaultWindow).__mockFaults ?? [], Date.now(), within));
+  const settled = () => !spinning.current || deadline.current === null;
+  return always(() => (settled() ? true : eventually(settled).within(deadline.current!, 'milliseconds')));
 };
 
 /** Text that means a JS value reached the page unformatted. */

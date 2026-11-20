@@ -74,7 +74,8 @@ Go through `<dir>/bombadil/properties.ts` with the app's markup open:
 
 - `errorBoundaryNeverShown`: the selector of the app's error-boundary fallback.
   No error boundary? Delete it, and tell the person (**ask** whether to add one).
-- `spinnersClear`: the app's loading indicator selector.
+- `spinnersClear`: the app's loading indicator selector, and `exclude` for
+  progress that's meant to run long (a confirmation modal's).
 - `failedWritesShown`: how the app shows an error (`errorSelector`), and the
   writes that fail silently on purpose (`quiet`, each with a comment saying why).
 - `nothingUnder`: only if a header or button floats over content; else delete.
