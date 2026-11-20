@@ -36,10 +36,14 @@ licensed; maintained as-is.
 ## Install
 
 ```bash
-npm i -D bombadil-kit@github:rubysolo/bombadil-kit#v0.1.0 @antithesishq/bombadil@0.7.10 esbuild
+npm i -D https://github.com/rubysolo/bombadil-kit/releases/download/v0.1.1/bombadil-kit-0.1.1.tgz \
+  @antithesishq/bombadil@0.7.10 esbuild
 ```
 
-Node 22.18 or later. Bombadil finds Chrome by itself, or through `$CHROME`.
+Each release's tarball is attached to its GitHub release; a URL install
+needs no git, so it works in a Docker build too. (`github:rubysolo/bombadil-kit#<tag>`
+also works where git is available; npm builds it on install.) Node 22.18 or
+later. Bombadil finds Chrome by itself, or through `$CHROME`.
 
 ## Configure
 

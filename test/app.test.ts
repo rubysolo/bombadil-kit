@@ -99,9 +99,21 @@ test('seedFaker: same seed, same data and clock; unseeded leaves faker alone', (
   const b = [faker.person.fullName(), two.mockRandom(), two.mockNow()];
   assert.deepEqual(a, b);
   assert.equal(a[2], Date.parse('2026-01-02T00:00:00Z'));
-  const off = seedFaker(faker, {});
+});
+
+test('seedFaker unseeded: the clock, and mockRandom follows a later applySeed', async () => {
+  const { Faker, en } = await import('@faker-js/faker');
+  const fresh = new Faker({ locale: [en] });
+  const off = seedFaker(fresh, {});
   assert.equal(off.seeded, undefined);
   assert.ok(Math.abs(off.mockNow() - Date.now()) < 1000);
+  const { applySeed } = await import('../src/app/faker.ts');
+  const ref = new Date('2026-11-19T00:00:00Z');
+  applySeed(fresh, { seed: 7, refDate: ref });
+  const a = [off.mockRandom(), off.mockRandom()];
+  applySeed(fresh, { seed: 7, refDate: ref });
+  assert.deepEqual([off.mockRandom(), off.mockRandom()], a);
+  assert.equal(off.mockNow(), ref.getTime());
 });
 
 // ----------------------------------------------------------------- console

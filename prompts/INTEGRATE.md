@@ -23,7 +23,8 @@ If there's no mock mode, stop here: see AGENTS.md.
 ## 1. Install and configure
 
 ```bash
-npm i -D bombadil-kit@github:rubysolo/bombadil-kit#<tag> @antithesishq/bombadil@0.7.10 esbuild
+npm i -D https://github.com/rubysolo/bombadil-kit/releases/download/<tag>/bombadil-kit-<version>.tgz \
+  @antithesishq/bombadil@0.7.10 esbuild
 ```
 
 Copy `templates/bombadil-kit.json` to the repo root and fill it in: the app's

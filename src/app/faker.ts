@@ -33,17 +33,22 @@ export const parseMockSeed = (env: Record<string, unknown>): MockSeed | undefine
   return { seed, refDate: new Date(`${day}T00:00:00Z`) };
 };
 
+/** Seeds `faker` and pins the date it counts from. */
+export const applySeed = (faker: FakerLike, { seed, refDate }: MockSeed): void => {
+  faker.seed(seed);
+  faker.setDefaultRefDate(refDate);
+};
+
 export const seedFaker = (faker: FakerLike, env: Record<string, unknown>) => {
   const seeded = parseMockSeed(env);
-  if (seeded) {
-    faker.seed(seeded.seed);
-    faker.setDefaultRefDate(seeded.refDate);
-  }
+  if (seeded) applySeed(faker, seeded);
   return {
     seeded,
-    /** Math.random for the mock layer: seeded with faker when a seed is set. */
-    mockRandom: (): number => (seeded ? faker.number.float({ min: 0, max: 1 }) : Math.random()),
-    /** Now, for the mock layer: the reference date when seeded, else the clock. */
-    mockNow: (): number => (seeded ? faker.defaultRefDate().getTime() : Date.now()),
+    // Always through faker, seeded or not: unseeded it's as random as
+    // Math.random, and whoever seeds faker later (a test) seeds these too.
+    /** Math.random for the mock layer. */
+    mockRandom: (): number => faker.number.float({ min: 0, max: 1 }),
+    /** Now, for the mock layer: faker's reference date, which is the clock until one is set. */
+    mockNow: (): number => faker.defaultRefDate().getTime(),
   };
 };
