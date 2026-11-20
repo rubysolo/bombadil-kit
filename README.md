@@ -148,7 +148,7 @@ bundle declare `x` twice, and the spec won't load.
 | `noLeakedText(pattern?)` | no `undefined`, `NaN`, `[object Object]`, `Invalid Date`, `null` in the text |
 | `noSidewaysScroll(tolerance?)` | the page never scrolls horizontally |
 | `failedWritesShown({ quiet, errorSelector, within })` | a write the fault injector failed is followed by a visible error within 5s; slow and hung writes don't count |
-| `consoleQuietUnlessFaulted(grace?)` | no console error, except within 5s of an injected error, 5s after a slow response answers, or after a hang |
+| `consoleQuietUnlessFaulted(grace?, hangGrace?)` | no console error, except within 5s of an injected error, 5s after a slow response answers, or `hangGrace` (default `grace`) after a hang started |
 | `nothingUnder({ selector, container })` | no text is drawn over, say, a floating header's logo |
 | `appRenders({ root, within })` | something renders within 10s; also records rendered files |
 
@@ -199,7 +199,7 @@ itself:
 |---|---|
 | `method`, `path`, `status`, `at` | the request (`path` can be `Controller.method`), what it failed with, `Date.now()` when it started |
 | `write` | optional. Whether it changes data; overrides the `method !== 'GET'` guess. Transports without HTTP verbs set it; `isWrite(method, path)` on `withFaults`/`createFaultInjector` fills it |
-| `kind` | optional. `'error'` (the default): it failed. `'slow'`: it answered `delayMs` late. `'hang'`: it never answers |
+| `kind` | optional. `'error'` (the default): it failed. `'slow'`: it answered `delayMs` late. `'hang'`: it never answers; console errors are excused for `hangGrace` after `at`, not for the rest of the page |
 | `delayMs` | optional, for `slow` |
 
 `spare` the mock's control endpoints and whatever every page needs to render

@@ -29,6 +29,9 @@ export type Fault =
   | { status: 'FETCH_ERROR'; error: string }
   | { status: 'TIMEOUT_ERROR'; error: string };
 
+/** See InjectedFault's `kind`. */
+export type FaultKind = 'error' | 'slow' | 'hang';
+
 export interface InjectedFault {
   /** The HTTP method, or whatever the transport has instead (an RPC mock might log `'RPC'`). */
   method: string;
@@ -46,9 +49,10 @@ export interface InjectedFault {
   /**
    * `'error'` (the default when absent): the request failed. `'slow'`: it
    * answered, `delayMs` late. `'hang'`: it never answers.
-   * failedWritesShown only counts errors.
+   * failedWritesShown only counts errors; consoleQuietUnlessFaulted excuses
+   * a hang like an error, from `at`.
    */
-  kind?: 'error' | 'slow' | 'hang';
+  kind?: FaultKind;
   /** For `slow`: how late the answer came, in ms. */
   delayMs?: number;
 }

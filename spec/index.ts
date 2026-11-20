@@ -110,12 +110,13 @@ export const failedWritesShown = ({
 /**
  * Bombadil's noConsoleErrors, except while an injected fault may still be
  * making the app log: `grace` ms after an error, `grace` ms after a slow
- * response answers (`at + delayMs`), and from a hang on. The app logs the
+ * response answers (`at + delayMs`), `hangGrace` ms after a hang started
+ * (default `grace`; raise it to the app's request timeout). The app logs the
  * failures it handles, and failedWritesShown/spinnersClear judge those.
  * Anything else (a React warning, a failed render) still counts.
  */
-export const consoleQuietUnlessFaulted = (grace = 5000) => {
-  const faulted = extract((state) => faultInFlight((state.window as FaultWindow).__mockFaults ?? [], Date.now(), grace));
+export const consoleQuietUnlessFaulted = (grace = 5000, hangGrace = grace) => {
+  const faulted = extract((state) => faultInFlight((state.window as FaultWindow).__mockFaults ?? [], Date.now(), grace, hangGrace));
   const errors = extract((state) => state.console.filter((e) => e.level === 'error').map((e) => e.args));
   return always(() => errors.current.length === 0 || faulted.current);
 };

@@ -43,13 +43,22 @@ test('faultInFlight: an error for `grace` ms; checks every fault, not only the l
   assert.equal(faultInFlight([fault()], t + 4999), true);
   assert.equal(faultInFlight([fault()], t + 5000), false);
   assert.equal(faultInFlight([fault()], t + 1500, 1000), false);
-  assert.equal(faultInFlight([fault({ kind: 'hang' }), fault({ at: t + 10 })], t + 60_000), true);
+  assert.equal(faultInFlight([fault({ at: t + 3000 }), fault({ at: t })], t + 4000, 2000), true);
 });
 
-test('faultInFlight: a slow one until at + delayMs + grace; a hang indefinitely', () => {
+test('faultInFlight: a slow one until at + delayMs + grace', () => {
   const slow = fault({ kind: 'slow', delayMs: 8000 });
   assert.equal(faultInFlight([slow], t + 12_999), true);
   assert.equal(faultInFlight([slow], t + 13_000), false);
   assert.equal(faultInFlight([fault({ kind: 'slow' })], t + 5000), false);
-  assert.equal(faultInFlight([fault({ kind: 'hang' })], t + 3_600_000), true);
+});
+
+test('faultInFlight: a hang like an error, for hangGrace (default grace) after at, not for the rest of the page', () => {
+  const hang = fault({ kind: 'hang' });
+  assert.equal(faultInFlight([hang], t + 4999), true);
+  assert.equal(faultInFlight([hang], t + 5000), false);
+  assert.equal(faultInFlight([hang], t + 60_000), false);
+  assert.equal(faultInFlight([hang], t + 20_000, 5000, 30_000), true);
+  assert.equal(faultInFlight([hang], t + 30_000, 5000, 30_000), false);
+  assert.equal(faultInFlight([hang], t + 1500, 1000), false);
 });
