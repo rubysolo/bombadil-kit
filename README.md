@@ -137,6 +137,10 @@ under the name the report shows. The export name is part of each finding's
 id; rename one and its findings start over. `templates/bombadil/` has a full
 spec, a signed-in flow spec, and the properties file.
 
+A spec file that uses a name and passes it on: `import { x } from '…'` then
+`export { x }`. `export { x } from '…'` beside that import makes Bombadil's
+bundle declare `x` twice, and the spec won't load.
+
 | factory | holds when |
 |---|---|
 | `errorBoundaryNeverShown(selector)` | the error boundary's fallback never shows |
