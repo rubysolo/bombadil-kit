@@ -143,8 +143,8 @@ spec, a signed-in flow spec, and the properties file.
 | `spinnersClear({ selector, within })` | a visible loading indicator clears within 15s |
 | `noLeakedText(pattern?)` | no `undefined`, `NaN`, `[object Object]`, `Invalid Date`, `null` in the text |
 | `noSidewaysScroll(tolerance?)` | the page never scrolls horizontally |
-| `failedWritesShown({ quiet, errorSelector, within })` | a write the fault injector failed is followed by a visible error within 5s |
-| `consoleQuietUnlessFaulted(grace?)` | no console error, except within 5s of an injected fault |
+| `failedWritesShown({ quiet, errorSelector, within })` | a write the fault injector failed is followed by a visible error within 5s; slow and hung writes don't count |
+| `consoleQuietUnlessFaulted(grace?)` | no console error, except within 5s of an injected error, 5s after a slow response answers, or after a hang |
 | `nothingUnder({ selector, container })` | no text is drawn over, say, a floating header's logo |
 | `appRenders({ root, within })` | something renders within 10s; also records rendered files |
 
@@ -156,7 +156,8 @@ spec, a signed-in flow spec, and the properties file.
 | `fenced(generator)` | `generator`, or only Back outside the flow's fence |
 
 `failedWritesShown` and `consoleQuietUnlessFaulted` read `window.__mockFaults`,
-which the app's fault injector fills (below).
+which the app's fault injector fills (below). `isWriteFault(f)` is how they
+tell a write: `f.write ?? f.method !== 'GET'`.
 
 ## In the app
 
@@ -181,10 +182,21 @@ if (import.meta.env.VITE_FUZZ === 'true') installFuzzConsole();
 
 | module | env | does |
 |---|---|---|
-| `bombadil-kit/rtk` | `VITE_MOCK_FAULT_RATE`, `_SEED` | `withFaults(baseQuery, env, { spare, onFault })`: fails that share of requests as 500, 503, 422, network error or timeout, chosen by a seeded PRNG; returns `baseQuery` itself when off |
-| `bombadil-kit/faults` | same | `createFaultInjector`, for mock layers other than RTK Query; both log to `window.__mockFaults` |
+| `bombadil-kit/rtk` | `VITE_MOCK_FAULT_RATE`, `_SEED` | `withFaults(baseQuery, env, { spare, isWrite, onFault })`: fails that share of requests as 500, 503, 422, network error or timeout, chosen by a seeded PRNG; returns `baseQuery` itself when off |
+| `bombadil-kit/faults` | same | `createFaultInjector({ rate, seed, spare, isWrite })`, for mock layers other than RTK Query; both log to `window.__mockFaults` |
 | `bombadil-kit/faker` | `VITE_MOCK_SEED`, `VITE_MOCK_REF_DATE` | seeds the app's faker and its reference date; `mockRandom`/`mockNow` for the rest of the mock layer |
 | `bombadil-kit/console` | `VITE_FUZZ` | each `console.error` becomes one string with the source lines that raised it (Bombadil records only the first argument) |
+
+A mock layer of the app's own (RPC, Salesforce remoting, GraphQL, one that
+delays or hangs requests) can push its faults onto `window.__mockFaults`
+itself:
+
+| field | |
+|---|---|
+| `method`, `path`, `status`, `at` | the request (`path` can be `Controller.method`), what it failed with, `Date.now()` when it started |
+| `write` | optional. Whether it changes data; overrides the `method !== 'GET'` guess. Transports without HTTP verbs set it; `isWrite(method, path)` on `withFaults`/`createFaultInjector` fills it |
+| `kind` | optional. `'error'` (the default): it failed. `'slow'`: it answered `delayMs` late. `'hang'`: it never answers |
+| `delayMs` | optional, for `slow` |
 
 `spare` the mock's control endpoints and whatever every page needs to render
 at all (translations, feature flags): failing those makes every page fail the

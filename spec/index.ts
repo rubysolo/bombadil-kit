@@ -21,7 +21,13 @@ import {
   type Fingerprint,
 } from '@antithesishq/bombadil/browser';
 
-type InjectedFault = { method: string; path: string; status: unknown; at: number };
+// Import, then export the bindings: `export { … } from` beside an import of the
+// same names makes Bombadil's bundle declare them twice ("Identifier
+// 'faultInFlight' has already been declared").
+import { faultInFlight, freshFailedWrite, isErrorFault, isWriteFault, type FaultKind, type InjectedFault } from './faults.ts';
+
+export { faultInFlight, freshFailedWrite, isErrorFault, isWriteFault, type FaultKind, type InjectedFault };
+
 type FaultWindow = Window & { __mockFaults?: InjectedFault[] };
 type ActionGenerator = ReturnType<typeof actions>;
 
@@ -80,9 +86,10 @@ export const noSidewaysScroll = (tolerance = 1) => {
 };
 
 /**
- * When the app's fault injector fails a write (anything but GET), the user is
- * told within `within` seconds: something matching `errorSelector` shows up
- * with text in it. Reads `window.__mockFaults` (templates/app/faults.ts).
+ * When the app's fault injector fails a write (`write: true`, or without it
+ * anything but GET), the user is told within `within` seconds: something
+ * matching `errorSelector` shows up with text in it. Reads `window.__mockFaults`
+ * (bombadil-kit/faults); slow and hung faults don't count.
  * `quiet`: writes that fail silently on purpose, as `/^METHOD \/path$/`.
  */
 export const failedWritesShown = ({
@@ -90,33 +97,27 @@ export const failedWritesShown = ({
   errorSelector = '[role="alert"]',
   within = 5,
 } = {}) => {
-  const freshFailedWrite = extract((state) => {
-    const faults = (state.window as FaultWindow).__mockFaults ?? [];
-    const t = Date.now();
-    const fault = faults.find(
-      (f) => f.method !== 'GET' && t - f.at < 1500 && !quiet.some((q) => q.test(`${f.method} ${f.path}`)),
-    );
+  const failedWrite = extract((state) => {
+    const fault = freshFailedWrite((state.window as FaultWindow).__mockFaults ?? [], Date.now(), quiet);
     return fault ? `${fault.method} ${fault.path} → ${String(fault.status)}` : null;
   });
   const errorShown = extract((state) =>
     [...state.document.querySelectorAll(errorSelector)].some((el) => isVisible(el) && (el.textContent ?? '').trim() !== ''),
   );
-  return always(now(() => freshFailedWrite.current !== null).implies(eventually(() => errorShown.current).within(within, 'seconds')));
+  return always(now(() => failedWrite.current !== null).implies(eventually(() => errorShown.current).within(within, 'seconds')));
 };
 
 /**
- * Bombadil's noConsoleErrors, except within `grace` ms of an injected fault:
- * the app logs the failures it handles, and failedWritesShown/spinnersClear
- * judge those. Anything else (a React warning, a failed render) still counts.
+ * Bombadil's noConsoleErrors, except while an injected fault may still be
+ * making the app log: `grace` ms after an error, `grace` ms after a slow
+ * response answers (`at + delayMs`), and from a hang on. The app logs the
+ * failures it handles, and failedWritesShown/spinnersClear judge those.
+ * Anything else (a React warning, a failed render) still counts.
  */
 export const consoleQuietUnlessFaulted = (grace = 5000) => {
-  const faultInFlight = extract((state) => {
-    const faults = (state.window as FaultWindow).__mockFaults ?? [];
-    const last = faults[faults.length - 1];
-    return last !== undefined && Date.now() - last.at < grace;
-  });
+  const faulted = extract((state) => faultInFlight((state.window as FaultWindow).__mockFaults ?? [], Date.now(), grace));
   const errors = extract((state) => state.console.filter((e) => e.level === 'error').map((e) => e.args));
-  return always(() => errors.current.length === 0 || faultInFlight.current);
+  return always(() => errors.current.length === 0 || faulted.current);
 };
 
 /**
