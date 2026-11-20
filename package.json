@@ -2,7 +2,7 @@
   "name": "bombadil-kit",
   "version": "0.1.0",
   "description": "Bombadil fuzzing toolkit: shared properties, flow runner, diff-aware PR runs, and a findings report.",
-  "license": "UNLICENSED",
+  "license": "MIT",
   "type": "module",
   "bin": {
     "bombadil-kit": "dist/cli.js"
@@ -43,7 +43,8 @@
     "templates",
     "prompts",
     "AGENTS.md",
-    "README.md"
+    "README.md",
+    "LICENSE"
   ],
   "engines": {
     "node": ">=22.18"
@@ -74,5 +75,9 @@
     "typescript": "^5.9",
     "@reduxjs/toolkit": "^2",
     "@faker-js/faker": "^9"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/rubysolo/bombadil-kit.git"
   }
 }

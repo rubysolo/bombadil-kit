@@ -30,6 +30,9 @@ of the spec library don't care; the coverage map needs a React dev build, and
 
 **Agents integrating this into a repo: read [AGENTS.md](AGENTS.md).**
 
+An unofficial companion to Bombadil, not affiliated with Antithesis. MIT
+licensed; maintained as-is.
+
 ## Install
 
 ```bash
