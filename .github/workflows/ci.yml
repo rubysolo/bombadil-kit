@@ -25,4 +25,6 @@ jobs:
             const need = ["dist/cli.js", "dist/app/rtk.js", "dist/app/rtk.d.ts", "spec/index.ts", "fonts/rajdhani-latin-700-normal.woff2", "templates/github/fuzz.yml", "prompts/ADOPT.md", "AGENTS.md"];
             const missing = need.filter((f) => !files.has(f));
             if (missing.length) { console.error("missing from the package:", missing); process.exit(1); }
+            const cli = require("./pack.json")[0].files.find((f) => f.path === "dist/cli.js");
+            if (!(cli.mode & 0o111)) { console.error("dist/cli.js is not executable in the package, mode", cli.mode.toString(8)); process.exit(1); }
           '
