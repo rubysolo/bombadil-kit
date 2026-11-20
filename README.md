@@ -283,7 +283,7 @@ findings.
 ```bash
 npm test           # node --test
 npm run typecheck  # the CLI, and the spec library against Bombadil's types
-npm run build      # dist/, what the bin runs
+npm run build      # dist/, what the bin runs (dist/cli.js executable)
 ```
 
 Fonts: Rajdhani and JetBrains Mono, Latin subsets from @fontsource, OFL
