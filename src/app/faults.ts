@@ -1,8 +1,8 @@
 /**
  * bombadil-kit/faults: seeded fault injection for an app's mock API, the app
- * side of the contract with bombadil-kit/spec's failedWritesShown and
- * consoleQuietUnlessFaulted: every injected fault is pushed onto
- * window.__mockFaults as { method, path, status, at } (InjectedFault). A mock
+ * side of the contract with bombadil-kit/spec's failedWritesShown,
+ * consoleQuietUnlessFaulted and spinnersClear: every injected fault is pushed
+ * onto window.__mockFaults as { method, path, status, at } (InjectedFault). A mock
  * layer of the app's own (RPC, Salesforce remoting, GraphQL, one that delays
  * or hangs requests) can push the same entries.
  *

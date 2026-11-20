@@ -144,7 +144,7 @@ bundle declare `x` twice, and the spec won't load.
 | factory | holds when |
 |---|---|
 | `errorBoundaryNeverShown(selector)` | the error boundary's fallback never shows |
-| `spinnersClear({ selector, within })` | a visible loading indicator clears within 15s |
+| `spinnersClear({ selector, within, exclude })` | a visible loading indicator clears within 15s, plus the `delayMs` of a slow fault still in flight; any hang since the page loaded excuses it. Spinners inside `exclude` (a selector: a modal meant to show 30s of progress) don't count |
 | `noLeakedText(pattern?)` | no `undefined`, `NaN`, `[object Object]`, `Invalid Date`, `null` in the text |
 | `noSidewaysScroll(tolerance?)` | the page never scrolls horizontally |
 | `failedWritesShown({ quiet, errorSelector, within })` | a write the fault injector failed is followed by a visible error within 5s; slow and hung writes don't count |
@@ -159,9 +159,9 @@ bundle declare `x` twice, and the spec won't load.
 | `forwardClicks({ label, exclude })` | only Next / Save / Submit / Pay / … buttons, to weight a workflow forward |
 | `fenced(generator)` | `generator`, or only Back outside the flow's fence |
 
-`failedWritesShown` and `consoleQuietUnlessFaulted` read `window.__mockFaults`,
-which the app's fault injector fills (below). `isWriteFault(f)` is how they
-tell a write: `f.write ?? f.method !== 'GET'`.
+`failedWritesShown`, `consoleQuietUnlessFaulted` and `spinnersClear` read
+`window.__mockFaults`, which the app's fault injector fills (below).
+`isWriteFault(f)` is how they tell a write: `f.write ?? f.method !== 'GET'`.
 
 ## In the app
 
@@ -199,7 +199,7 @@ itself:
 |---|---|
 | `method`, `path`, `status`, `at` | the request (`path` can be `Controller.method`), what it failed with, `Date.now()` when it started |
 | `write` | optional. Whether it changes data; overrides the `method !== 'GET'` guess. Transports without HTTP verbs set it; `isWrite(method, path)` on `withFaults`/`createFaultInjector` fills it |
-| `kind` | optional. `'error'` (the default): it failed. `'slow'`: it answered `delayMs` late. `'hang'`: it never answers; console errors are excused for `hangGrace` after `at`, not for the rest of the page |
+| `kind` | optional. `'error'` (the default): it failed. `'slow'`: it answered `delayMs` late. `'hang'`: it never answers; console errors are excused for `hangGrace` after `at`, not for the rest of the page, and spinners for the rest of it |
 | `delayMs` | optional, for `slow` |
 
 `spare` the mock's control endpoints and whatever every page needs to render

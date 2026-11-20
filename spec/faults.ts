@@ -26,6 +26,20 @@ export const freshFailedWrite = (faults: readonly InjectedFault[], now: number, 
   );
 
 /**
+ * spinnersClear's deadline, in ms, for a spinner seen at `now`: `within`
+ * seconds, plus the largest `delayMs` among slow faults still in flight
+ * (`at + delayMs` not yet passed). `null` once any hang was injected since the
+ * page loaded: a hung request legitimately spins forever.
+ */
+export const spinnerDeadline = (faults: readonly InjectedFault[], now: number, within: number): number | null => {
+  if (faults.some((f) => f.kind === 'hang')) return null;
+  const slow = faults
+    .filter((f) => f.kind === 'slow' && now < f.at + (f.delayMs ?? 0))
+    .reduce((max, f) => Math.max(max, f.delayMs ?? 0), 0);
+  return within * 1000 + slow;
+};
+
+/**
  * consoleQuietUnlessFaulted's excuse: a fault that may still be making the app
  * log. An error for `grace` ms after it; a slow response until `grace` ms
  * after it answers; a hang for `hangGrace` ms after it started (a hung
