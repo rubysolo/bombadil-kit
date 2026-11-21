@@ -11,6 +11,7 @@ export const PROPERTY_FACTORIES = [
   'consoleQuietUnlessFaulted',
   'nothingUnder',
   'appRenders',
+  'noBlankPage',
 ];
 
 /** What the report knows about a project beyond its runs. */

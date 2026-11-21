@@ -152,6 +152,13 @@ bundle declare `x` twice, and the spec won't load.
 | `consoleQuietUnlessFaulted({ injected })` | no console error, except one whose text matches `injected` (the marker the mock layer puts in what it injects), whenever it lands; with the built-in injector, `new RegExp(INJECTED_MARKER)`. Needs `installFuzzConsole` when the marker is inside a logged object: Bombadil records those as `"Object"` |
 | `nothingUnder({ selector, container })` | no text is drawn over, say, a floating header's logo |
 | `appRenders({ root, within })` | something renders within 10s; also records rendered files |
+| `noBlankPage({ chrome, minChars, filled, loading, minStates, minMs })` | the page is never left, for 3 states and 250ms on one history entry, with under 50 characters of text outside `chrome` (`header, footer, nav`) and nothing there matching `filled` (links, buttons, form fields, media, `[role="alert"]`) or `loading` (spinnersClear's). appRenders only checks the first render. `minMs` must outlast the app's harmless blank moments (a lazy route loading); the `blank` snapshot in a clean sweep's trace shows them |
+
+`persisted(state, key, active)`, inside `extract`, gives how long `active` has
+held on the current history entry as `{ ms, states }` (a reload or navigation
+starts over); `hasSettled(p, { minStates = 3, minMs = 1000 })` is whether that
+outlived a render cascade. noBlankPage is built from them; so can an app's own
+"stuck in state X" property.
 
 | action | does |
 |---|---|

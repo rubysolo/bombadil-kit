@@ -19,12 +19,13 @@ import {
   getFingerprint,
   registerCustomAction,
   type Fingerprint,
+  type State,
 } from '@antithesishq/bombadil/browser';
 
 // Import, then export the bindings: `export { … } from` beside an import of the
 // same names makes Bombadil's bundle declare them twice ("Identifier
 // 'faultInFlight' has already been declared").
-import { isVisible, visibleOutside } from './dom.ts';
+import { contentLength, isVisible, visibleOutside } from './dom.ts';
 import {
   consoleErrorExcused,
   faultInFlight,
@@ -37,11 +38,13 @@ import {
   type FaultKind,
   type InjectedFault,
 } from './faults.ts';
+import { hasSettled, persist, type Persisted, type PersistStore } from './settled.ts';
 
 export {
   consoleErrorExcused,
   faultInFlight,
   freshFailedWrite,
+  hasSettled,
   isErrorFault,
   isWriteFault,
   spinnerDeadline,
@@ -49,10 +52,27 @@ export {
   type ConsoleExcuse,
   type FaultKind,
   type InjectedFault,
+  type Persisted,
 };
 
 type FaultWindow = Window & { __mockFaults?: InjectedFault[] };
+type PersistWindow = Window & { __fuzzPersisted?: PersistStore };
 type ActionGenerator = ReturnType<typeof actions>;
+
+/**
+ * For use inside `extract`: how long `active` has held without a break on the
+ * current history entry, in milliseconds and captured states. `key` names the
+ * timer; give each condition its own. The timers live on the page's `window`,
+ * so a reload resets them, and a change of history entry restarts them.
+ *
+ *   const stuck = extract((state) => persisted(state, 'stuck', isStuck(state.document)));
+ *   export const notStuck = always(() => !hasSettled(stuck.current));
+ */
+export const persisted = (state: State, key: string, active: boolean): Persisted =>
+  persist(((state.window as PersistWindow).__fuzzPersisted ??= {}), key, state.navigationHistory.current.id, active, Date.now());
+
+/** The loading indicators spinnersClear and noBlankPage look for. */
+const LOADING = '[role="status"][aria-busy="true"], [role="progressbar"]';
 
 const cookie = (doc: Document, name: string): string | null => {
   const m = new RegExp(`(?:^|;\\s*)${name}=([^;]*)`).exec(doc.cookie);
@@ -80,7 +100,7 @@ export const errorBoundaryNeverShown = (selector = '[data-testid="error-boundary
  * `exclude`: spinners inside an element matching it are meant to run long.
  */
 export const spinnersClear = ({
-  selector = '[role="status"][aria-busy="true"], [role="progressbar"]',
+  selector = LOADING,
   within = 15,
   exclude,
 }: { selector?: string; within?: number; exclude?: string } = {}) => {
@@ -243,6 +263,49 @@ export const appRenders = ({ root = '#root', within = 10 } = {}) => {
     return { fresh, total: seen.size };
   });
   return always(eventually(() => rendered.current.total > 0).within(within, 'seconds'));
+};
+
+let blankPages = 0;
+
+/**
+ * What fills a page without much text: something to click (an empty state's
+ * "Keep shopping"), a form, media, an error being shown.
+ */
+const FILLED = 'a[href], button, input:not([type=hidden]), select, textarea, img, video, canvas, [role="alert"]';
+
+/**
+ * The page is never (nearly) empty for long: fewer than `minChars` characters
+ * of text outside `chrome`, and nothing outside it matching `filled` (a link,
+ * a button, a form field, media, an alert) or `loading`, for at least
+ * `minStates` captured states and `minMs` (see hasSettled). Catches the route
+ * that renders only its header and footer after a failed request, which
+ * appRenders, once past first paint, can't.
+ *
+ * `minMs` has to outlast the app's harmless blank moments (a lazy route
+ * loading) but not the walker's stay: a blank page offers nothing to click
+ * but the chrome, so the walker leaves it in well under a second. Find the
+ * floor in a clean sweep's trace (the `blank` snapshot) and set it above.
+ */
+export const noBlankPage = ({
+  chrome = 'header, footer, nav',
+  minChars = 50,
+  loading = LOADING,
+  filled = FILLED,
+  minStates = 3,
+  minMs = 250,
+}:{ chrome?: string; minChars?: number; loading?: string; filled?: string; minStates?: number; minMs?: number } = {}) => {
+  const key = `noBlankPage#${blankPages++}`;
+  const blank = extract((state) => {
+    const doc = state.document;
+    const { body } = doc;
+    const empty =
+      !body ||
+      (contentLength(body, chrome) < minChars &&
+        !visibleOutside(doc.querySelectorAll(loading)) &&
+        !visibleOutside(doc.querySelectorAll(filled), chrome));
+    return persisted(state, key, empty);
+  });
+  return always(() => !hasSettled(blank.current, { minStates, minMs }));
 };
 
 // ------------------------------------------------------------------- actions
