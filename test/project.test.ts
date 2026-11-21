@@ -7,8 +7,10 @@ import { PROPERTY_FACTORIES, specProperties } from '../src/report/project.ts';
 test("PROPERTY_FACTORIES is exactly the spec library's property factories", () => {
   const source = readFileSync(join(import.meta.dirname, '../spec/index.ts'), 'utf8');
   // A property factory is an exported arrow function whose body returns always(…).
-  const factories = [...source.matchAll(/export const (\w+) = \([^)]*\)[^=]*=> \{[\s\S]*?\n  return always\(/g)].map((m) => m[1]);
-  const inline = [...source.matchAll(/export const (\w+) = \([^)]*\) => \{\n[^]*?\n\};/g)]
+  // Its parameters may hold one level of parens (a function-typed option).
+  const params = String.raw`\((?:[^()]|\([^()]*\))*\)`;
+  const factories = [...source.matchAll(new RegExp(String.raw`export const (\w+) = ${params}[^=]*=> \{[\s\S]*?\n  return always\(`, 'g'))].map((m) => m[1]);
+  const inline = [...source.matchAll(new RegExp(String.raw`export const (\w+) = ${params} => \{\n[^]*?\n\};`, 'g'))]
     .filter((m) => /\n  return always\(/.test(m[0]))
     .map((m) => m[1]);
   assert.deepEqual([...new Set([...factories, ...inline])].sort(), [...PROPERTY_FACTORIES].sort());

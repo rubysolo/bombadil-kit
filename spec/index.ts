@@ -42,6 +42,8 @@ import {
   requestPattern,
   isErrorFault,
   isWriteFault,
+  hungSince,
+  slowOverlap,
   spinnerDeadline,
   unexcusedConsoleErrors,
   type ConsoleExcuse,
@@ -71,6 +73,8 @@ export {
   requestPattern,
   isErrorFault,
   isWriteFault,
+  hungSince,
+  slowOverlap,
   spinnerDeadline,
   unexcusedConsoleErrors,
   type ConsoleExcuse,
@@ -137,9 +141,9 @@ const byPath: PageKey = (loc) => loc.pathname;
  * all its spinner time. A spinner waiting on slow requests the walker keeps
  * abandoning isn't stuck however long the sweep; one with nothing to wait for
  * is. Without the in-flight count, all spinner time is idle and `within` alone
- * decides, so keep it large. Reads `window.__mockFaults`: a slow fault still in
- * flight adds its `delayMs` to the deadline, and once a hang was injected the
- * property holds (a hung request spins forever).
+ * decides, so keep it large. Reads `window.__mockFaults`: time a slow fault is
+ * in flight isn't idle, and once a hang was injected on the page its spinner
+ * time counts nowhere and the property holds (a hung request spins forever).
  * `exclude`: spinners inside an element matching it are meant to run long.
  * `key`: which tally a page adds to; the path by default. Pages that route on
  * the query string (`/?id=open`, `/?id=closed`) need it to keep theirs apart:
@@ -160,13 +164,14 @@ export const spinnersClear = ({
     const win = state.window as FaultWindow & SpinnerWindow;
     const at = Date.now();
     const path = key(win.location);
-    const deadline = spinnerDeadline(win.__mockFaults ?? [], at, within);
+    const faults = win.__mockFaults ?? [];
+    const deadline = hungSince(faults) ? null : within * 1000;
     const store = spinnerStore(win);
     watchLeaving(win);
     const left = win.__fuzzLeft ?? undefined;
     win.__fuzzLeft = null;
     const spinning = visibleOutside(state.document.querySelectorAll(selector), exclude);
-    const tally = spinnerTime(store.value, path, spinning, at, busyMs(win, at), left, win.performance.timeOrigin, deadline === null);
+    const tally = spinnerTime(store.value, path, spinning, at, busyMs(win, at), left, win.performance.timeOrigin, faults);
     store.save();
     // A string, so the report names the path and tells stuck paths apart.
     return spinnerStuck(tally, deadline, share) ? `${path}: still loading, ${Math.round(tally.idle / 1000)}s of it with nothing in flight` : null;

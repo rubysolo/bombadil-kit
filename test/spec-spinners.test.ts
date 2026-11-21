@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { visibleOutside } from '../spec/dom.ts';
-import { spinnerDeadline, type InjectedFault } from '../spec/faults.ts';
+import { slowOverlap, spinnerDeadline, type InjectedFault } from '../spec/faults.ts';
 import { spinnerStuck, spinnerTime, type SpinnerStore } from '../spec/settled.ts';
 
 // Just enough of an Element: a box, and `closest` against the selectors it sits inside.
@@ -147,12 +147,41 @@ test('spinnerTime: a reload of the same path is a new page load: the gap across 
 test('spinnerTime: a hang excuses its interval; a reload into a healthy world starts from zero (no busy clock)', () => {
   // A layer that reports faults on __mockFaults but doesn't count requests in flight.
   const store: SpinnerStore = { paths: {} };
-  for (let i = 0; i <= 200; i++) spinnerTime(store, '/cart', true, t + i * 100, undefined, undefined, 1, true);
+  const hung = [fault({ kind: 'hang' })];
+  for (let i = 0; i <= 200; i++) spinnerTime(store, '/cart', true, t + i * 100, undefined, undefined, 1, hung);
   // The reload: a new page load, a fresh __mockFaults, no hang.
   spinnerTime(store, '/cart', true, t + 20000, undefined, undefined, 2);
   const tally = spinnerTime(store, '/cart', true, t + 20100, undefined, undefined, 2);
   assert.deepEqual(tally, { idle: 100, on: 100 });
   assert.equal(spinnerStuck(tally, 15000), false);
+});
+
+test('spinnerTime: time a slow fault is in flight is not idle; the time after it answers is (no busy clock)', () => {
+  const store: SpinnerStore = { paths: {} };
+  const slow = [fault({ kind: 'slow', delayMs: 8000 })];
+  spinnerTime(store, '/cart', true, t, undefined, undefined, 1, slow);
+  assert.deepEqual(spinnerTime(store, '/cart', true, t + 8000, undefined, undefined, 1, slow), { idle: 0, on: 8000 });
+  // Still spinning 8s after the answer: only that counts. Before, all 16s did, and it was stuck past 15s.
+  const tally = spinnerTime(store, '/cart', true, t + 16_000, undefined, undefined, 1, slow);
+  assert.deepEqual(tally, { idle: 8000, on: 16_000 });
+  assert.equal(spinnerStuck(tally, 15_000), false);
+});
+
+test('spinnerTime: with a busy clock too, a slow fault and the requests in flight count once', () => {
+  const store: SpinnerStore = { paths: {} };
+  // The slow request is also the one in flight: busy 0..8000.
+  const slow = [fault({ kind: 'slow', delayMs: 8000 })];
+  spinnerTime(store, '/cart', true, t, 0, undefined, 1, slow);
+  assert.deepEqual(spinnerTime(store, '/cart', true, t + 10_000, 8000, undefined, 1, slow), { idle: 2000, on: 10_000 });
+});
+
+test('slowOverlap: the part of an interval slow faults were in flight, overlaps once', () => {
+  const a = fault({ kind: 'slow', delayMs: 2000 });
+  const b = fault({ kind: 'slow', delayMs: 2000, at: t + 1000 });
+  assert.equal(slowOverlap([a], t - 1000, t + 5000), 2000);
+  assert.equal(slowOverlap([a, b], t, t + 5000), 3000);
+  assert.equal(slowOverlap([a, b], t + 2500, t + 5000), 500);
+  assert.equal(slowOverlap([a, fault(), fault({ kind: 'hang' }), fault({ kind: 'slow' })], t + 3000, t + 5000), 0);
 });
 
 test('spinnerTime: `on` is all the spinner time, `idle` the part with nothing in flight', () => {

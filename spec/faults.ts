@@ -26,10 +26,12 @@ export const freshFailedWrite = (faults: readonly InjectedFault[], now: number, 
   );
 
 /**
- * spinnersClear's deadline, in ms, for a spinner seen at `now`: `within`
- * seconds, plus the largest `delayMs` among slow faults still in flight
- * (`at + delayMs` not yet passed). `null` once any hang was injected since the
- * page loaded: a hung request legitimately spins forever.
+ * A deadline, in ms, for a spinner seen at `now`: `within` seconds, plus the
+ * largest `delayMs` among slow faults still in flight (`at + delayMs` not yet
+ * passed). `null` once any hang was injected since the page loaded: a hung
+ * request legitimately spins forever. spinnersClear no longer adds the slow
+ * extension to a total (spinnerTime leaves slow time out instead); kept for
+ * specs of an app's own.
  */
 export const spinnerDeadline = (faults: readonly InjectedFault[], now: number, within: number): number | null => {
   if (faults.some((f) => f.kind === 'hang')) return null;
@@ -37,6 +39,26 @@ export const spinnerDeadline = (faults: readonly InjectedFault[], now: number, w
     .filter((f) => f.kind === 'slow' && now < f.at + (f.delayMs ?? 0))
     .reduce((max, f) => Math.max(max, f.delayMs ?? 0), 0);
   return within * 1000 + slow;
+};
+
+/** Whether a hang was injected since the page loaded: spinnersClear's excuse. */
+export const hungSince = (faults: readonly InjectedFault[]) => faults.some((f) => f.kind === 'hang');
+
+/** How much of `from`..`to` (ms) a slow fault was in flight, `at` to `at + delayMs`; overlapping faults count once. */
+export const slowOverlap = (faults: readonly InjectedFault[], from: number, to: number): number => {
+  const spans = faults
+    .filter((f) => f.kind === 'slow' && (f.delayMs ?? 0) > 0)
+    .map((f) => [Math.max(from, f.at), Math.min(to, f.at + f.delayMs!)] as const)
+    .filter(([a, b]) => b > a)
+    .sort((x, y) => x[0] - y[0]);
+  let total = 0;
+  let end = from;
+  for (const [a, b] of spans) {
+    if (b <= end) continue;
+    total += b - Math.max(a, end);
+    end = b;
+  }
+  return total;
 };
 
 /** What failedWritesShown remembers across states, on the page's `window`: a page load starts it over, with __mockFaults. */
