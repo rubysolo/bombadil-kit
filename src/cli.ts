@@ -15,7 +15,7 @@ import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync } from 'node:fs';
 import { join, relative, resolve } from 'node:path';
 import { parseArgs } from 'node:util';
-import { loadConfig, pickProject, readFlows, type Loaded, type ProjectConfig } from './config.ts';
+import { loadConfig, pickProject, projectRoutes, readFlows, type Loaded, type ProjectConfig } from './config.ts';
 import { projectAffected } from './affected/project.ts';
 import { generate, type FailOn } from './report/generate.ts';
 import { run } from './runner/run.ts';
@@ -96,7 +96,7 @@ const cmdReport = (loaded: Loaded, argv: string[]) => {
     failOn,
     title: values.title,
     baseline: values.baseline && resolve(values.baseline),
-    routes: Object.fromEntries(Object.entries(loaded.config.projects).flatMap(([name, p]) => (p.routes ? [[name, p.routes]] : []))),
+    routes: projectRoutes(loaded),
   });
   const s = report.summary;
   console.error(`sweep ${report.sweep.id}: ${s.new} new, ${s.open} open, ${s.quiet} quiet, ${s.closed} closed · ${s.routes[0]}/${s.routes[1]} routes`);

@@ -1,5 +1,5 @@
 import { relative } from 'node:path';
-import { flowsPath, readFlows, specsDir, type ProjectConfig } from '../config.ts';
+import { flowsPath, readFlows, routesPath, specsDir, type ProjectConfig } from '../config.ts';
 import { affectedFlows, importersOf, type Affected } from './index.ts';
 
 const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
@@ -25,10 +25,11 @@ export const projectAffected = async (o: ProjectAffectedOptions): Promise<Affect
 
   // The fuzzer itself, and what every page is built from.
   const rel = (abs: string) => relative(root, abs);
+  const routes = routesPath(root, p);
   const always = [
     `^${escape(rel(specsDir(root, p)))}/`,
     `^${escape(rel(flowsPath(root, p)))}$`,
-    ...(p.routes ? [`^${escape(p.routes)}$`] : []),
+    ...(routes ? [`^${escape(routes)}$`] : []),
     '^bombadil-kit\\.json$',
     '(^|/)(package-lock\\.json|yarn\\.lock|pnpm-lock\\.yaml|bun\\.lockb?)$',
     ...(p.affected?.always ?? []),

@@ -92,6 +92,8 @@ jobs:
         run: |
           set -euo pipefail
           if [ "${{ github.event_name }}" = pull_request ]; then
+            # One project. With several, `affected` prints `<project> <flow>`:
+            # add --project here (and to list and run), or loop over projects.
             flows="$(npx bombadil-kit affected --base "origin/${{ github.base_ref }}" \
                       --coverage tmp/baseline/coverage.json 2> >(tee tmp-affected.txt >&2))"
             n=$(printf '%s\n' "$flows" | grep -c . || true)

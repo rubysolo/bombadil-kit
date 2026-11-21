@@ -2,7 +2,7 @@ import { spawn, execFileSync } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, writeFileSync } from 'node:fs';
 import { join, relative } from 'node:path';
 import { createInterface } from 'node:readline';
-import { fill, readFlows, specsDir, type Flow, type Loaded, type ProjectConfig } from '../config.ts';
+import { fill, projectRoutes, readFlows, specsDir, type Flow, type Loaded, type ProjectConfig } from '../config.ts';
 import { generate } from '../report/generate.ts';
 
 export interface RunOptions {
@@ -21,6 +21,18 @@ export interface RunOptions {
   height?: number;
   port?: number;
 }
+
+/** Rebuilds `<out>/report` from `<out>/runs`, as `bombadil-kit report` does with its defaults. */
+export const sweepReport = (loaded: Loaded, baseline?: string, now = new Date().toISOString()) =>
+  generate({
+    runsRoot: join(loaded.out, 'runs'),
+    out: join(loaded.out, 'report'),
+    repoRoot: loaded.root,
+    now,
+    title: loaded.config.title,
+    baseline,
+    routes: projectRoutes(loaded),
+  }).report;
 
 const stamp = (d = new Date()) => {
   const p = (n: number) => String(n).padStart(2, '0');
@@ -248,14 +260,7 @@ export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
 
     // One report rebuild for all the flows: they are one sweep.
     try {
-      const { report } = generate({
-        runsRoot: join(out, 'runs'),
-        out: join(out, 'report'),
-        repoRoot: root,
-        now: new Date().toISOString(),
-        title: config.title,
-        baseline: o.baseline,
-      });
+      const report = sweepReport(loaded, o.baseline);
       const s = report.summary;
       console.error(`sweep ${report.sweep.id}: ${s.new} new, ${s.open} open, ${s.quiet} quiet, ${s.closed} closed · ${s.routes[0]}/${s.routes[1]} routes`);
       console.error(`→ ${join(out, 'report', 'index.html')}`);

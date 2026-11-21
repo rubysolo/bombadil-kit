@@ -83,6 +83,8 @@ test("a project's own fuzzer files and routes file pick its flows, not the other
   const run = (changed: string[], p: ProjectConfig = routes) => projectAffected({ root, project: p, changed, coverage, coverageFile: 'c.json' });
   assert.equal((await run(['apps/a/bombadil/flows.json'])).everything, true);
   assert.equal((await run(['shared/a-routes.json'])).everything, true);
+  // As written in the config, `./` and all: still matches git diff's paths.
+  assert.equal((await run(['shared/a-routes.json'], { ...routes, routes: './shared/a-routes.json' })).everything, true);
   assert.equal((await run(['apps/b/bombadil/flows.json'])).everything, false);
   assert.equal((await run(['apps/b/bombadil/flows.json'], project('b'))).everything, true);
 });
