@@ -86,3 +86,38 @@ test('an older state.json without coverage still loads', () => {
   const s = applySweep(old, [run('a', { '/x': 1 }, [])], 't1');
   assert.deepEqual(s.coverage, { p: { explore: [] } });
 });
+
+test("api is each flow's union of calls, variants and inventory, across sweeps", () => {
+  const r = (id: string, flow: string, api?: RunResult['api']): RunResult => ({ ...run(id, { '/x': 1 }, []), meta: { ...run(id, {}, []).meta, flow }, ...(api ? { api } : {}) });
+  let s = emptyState();
+  s = applySweep(s, [r('a', 'explore')], 't0');
+  assert.equal(s.api, undefined, 'no api data, no api field');
+  s = applySweep(
+    s,
+    [
+      r('b', 'order', { calls: { 'O.get': { ok: 2 } }, variants: { 'O.get': ['locked'] }, inventory: { 'O.get': ['default', 'locked'], 'O.save': [] } }),
+      r('c', 'order', { calls: { 'O.get': { ok: 1, hang: 1 }, 'O.save': { error: 1 } }, variants: { 'O.get': ['default'] }, inventory: {} }),
+      r('d', 'explore'),
+    ],
+    't1',
+  );
+  s = applySweep(s, [r('e', 'order', { calls: { 'O.save': { ok: 1 } }, variants: {}, inventory: { 'O.list': [] } })], 't2');
+  assert.deepEqual(s.api, {
+    p: {
+      order: {
+        calls: { 'O.get': { ok: 3, hang: 1 }, 'O.save': { error: 1, ok: 1 } },
+        variants: { 'O.get': ['default', 'locked'] },
+        inventory: { 'O.get': ['default', 'locked'], 'O.save': [], 'O.list': [] },
+      },
+    },
+  });
+});
+
+test('an older state.json without api still loads, and keeps api once it has some', () => {
+  const old = { ...emptyState(), coverage: {} } as ReturnType<typeof emptyState>;
+  delete old.api;
+  const withApi: RunResult = { ...run('a', { '/x': 1 }, []), api: { calls: { k: { ok: 1 } }, variants: {}, inventory: {} } };
+  const s = applySweep(old, [withApi], 't1');
+  assert.deepEqual(s.api, { p: { explore: { calls: { k: { ok: 1 } }, variants: {}, inventory: {} } } });
+  assert.deepEqual(applySweep(s, [run('b', { '/x': 1 }, [])], 't2').api, s.api);
+});

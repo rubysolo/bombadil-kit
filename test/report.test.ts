@@ -73,3 +73,29 @@ test('buildReport derives statuses, the property matrix and route coverage', () 
   // Open first, then by last seen.
   assert.deepEqual(report.findings.map((f) => f.id), ['F-spinnersSettle', 'F-noLeakedValues']);
 });
+
+test('buildReport lists API endpoints per project: inventory first, unreached ones included', () => {
+  const withApi = (id: string, flow: string, api: RunResult['api']): RunResult => ({ ...run(id, []), meta: { ...run(id, []).meta, flow }, api });
+  let s = emptyState();
+  s = applySweep(
+    s,
+    [
+      withApi('r1', 'order', { calls: { 'O.get': { ok: 2, slow: 1 }, 'X.extra': { ok: 1 } }, variants: { 'O.get': ['locked'] }, inventory: { 'O.get': ['default', 'locked'], 'O.save': [] } }),
+      withApi('r2', 'browse', { calls: { 'O.get': { error: 1 } }, variants: {}, inventory: {} }),
+    ],
+    't1',
+  );
+  const report = buildReport(s, {}, { generatedAt: 'now', evidence: () => [] });
+  assert.deepEqual(report.projects[0]!.api, {
+    endpoints: [
+      { key: 'O.get', flows: ['browse', 'order'], outcomes: { ok: 2, slow: 1, error: 1 }, variantsSeen: ['locked'], variantsKnown: ['default', 'locked'], known: true },
+      { key: 'O.save', flows: [], outcomes: {}, variantsSeen: [], variantsKnown: [], known: true },
+      { key: 'X.extra', flows: ['order'], outcomes: { ok: 1 }, variantsSeen: [], variantsKnown: [], known: false },
+    ],
+    reached: 1,
+    known: 2,
+  });
+
+  const plain = buildReport(applySweep(emptyState(), [run('r1', [])], 't1'), {}, { generatedAt: 'now', evidence: () => [] });
+  assert.ok(!('api' in plain.projects[0]!), 'no api data, no api field');
+});

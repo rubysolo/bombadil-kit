@@ -19,6 +19,12 @@ export const rendering = (r: Row, fresh: string[]): Row => ({
   snapshots: [...r.snapshots, { index: 99, name: 'rendered', value: { fresh, total: fresh.length }, time: 0 }],
 });
 
+/** A state whose `api` extractor saw these calls (and, if given, the inventory). */
+export const calling = (r: Row, calls: { key: string; variant?: string; outcome: string }[], inventory?: { key: string; variants: string[] }[]): Row => ({
+  ...r,
+  snapshots: [...r.snapshots, { index: 98, name: 'api', value: inventory ? { calls, inventory } : { calls }, time: 0 }],
+});
+
 export const row = (i: number, url: string, action: unknown, violations: unknown[] = []): Row => ({
   timestamp: T0 + i * 1_000_000,
   action,

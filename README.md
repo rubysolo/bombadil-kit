@@ -167,6 +167,11 @@ outlived a render cascade. noBlankPage is built from them; so can an app's own
 | `forwardClicks({ label, exclude })` | only Next / Save / Submit / Pay / … buttons, to weight a workflow forward |
 | `fenced(generator)` | `generator`, or only Back outside the flow's fence |
 
+`apiCalls()` is not a property: call it once at the top level of the spec,
+unexported (Bombadil refuses an export that isn't a property or an action).
+It records the mock API calls each state saw, as the `api` snapshot, for the
+report's API coverage (below).
+
 `failedWritesShown`, `consoleQuietUnlessFaulted` and `spinnersClear` read
 `window.__mockFaults`, which the app's fault injector fills (below).
 `isWriteFault(f)` is how they tell a write: `f.write ?? f.method !== 'GET'`.
@@ -195,7 +200,7 @@ if (import.meta.env.VITE_FUZZ === 'true') installFuzzConsole();
 | module | env | does |
 |---|---|---|
 | `bombadil-kit/rtk` | `VITE_MOCK_FAULT_RATE`, `_SEED` | `withFaults(baseQuery, env, { spare, isWrite, onFault })`: fails that share of requests as 500, 503, 422, network error or timeout, chosen by a seeded PRNG; returns `baseQuery` itself when off |
-| `bombadil-kit/faults` | same | `createFaultInjector({ rate, seed, spare, isWrite })`, for mock layers other than RTK Query; both log to `window.__mockFaults`. `INJECTED_MARKER`: the text every built-in fault carries |
+| `bombadil-kit/faults` | same | `createFaultInjector({ rate, seed, spare, isWrite })`, for mock layers other than RTK Query; both log faults to `window.__mockFaults`, and every request (spared ones too) to `window.__mockCalls` as `METHOD /path`, `ok` or `error`. `INJECTED_MARKER`: the text every built-in fault carries |
 | `bombadil-kit/faker` | `VITE_MOCK_SEED`, `VITE_MOCK_REF_DATE` | seeds the app's faker and its reference date; `mockRandom`/`mockNow` for the rest of the mock layer |
 | `bombadil-kit/console` | `VITE_FUZZ` | each `console.error` becomes one string with the source lines that raised it (Bombadil records only the first argument) |
 
@@ -214,6 +219,19 @@ For `consoleQuietUnlessFaulted({ injected })`, such a layer puts one marker
 in every failure it injects (`/Mock world injected failure/`), in the text the
 app ends up logging.
 
+For the report's API coverage, a mock layer keeps `window.__mockCalls`, one
+entry per call (`withFaults`/`createFaultInjector` do, while faults are on):
+
+| field | |
+|---|---|
+| `key` | the endpoint: `GET /orders/:id`, `OrderController.getOrder`. A `METHOD /path` key with a concrete path is matched to the inventory's templates for that method, else ids are blurred as routes' are |
+| `variant` | optional. The named response it answered with (`empty`, `locked`) |
+| `outcome` | `'ok'`, `'error'`, `'slow'` or `'hang'` |
+| `at` | `Date.now()` when it was called |
+
+`window.__mockEndpoints`, `{ key, variants }[]`, optional, is the inventory:
+endpoints no flow called show in the report, dimmed.
+
 `spare` the mock's control endpoints and whatever every page needs to render
 at all (translations, feature flags): failing those makes every page fail the
 same way and drowns everything else.
@@ -226,7 +244,7 @@ same way and drowns everything else.
 |---|---|
 | `index.html` | people. Self-contained, opens from `file://`. Repo → project → finding. |
 | `findings.ndjson` | agents. One finding per line, `bombadil-report/v1`. |
-| `report.json` | agents and the page: summary, projects (property matrix, route coverage, sweep history), findings. |
+| `report.json` | agents and the page: summary, projects (property matrix, route coverage, API coverage, sweep history), findings. |
 | `state.json` | the history every report is derived from. Keep it between runs. |
 | `coverage.json` | per flow, the source files it rendered (`bombadil-coverage/v1`). |
 | `evidence/<id>/` | the last screenshots before each finding's latest violation. |
@@ -249,6 +267,12 @@ A sweep that didn't reach a finding's route says nothing about it. Delete
 `state.json` to start over. `routes.json` beside a spec lists the app's route
 patterns (`/orders/:id`), so URLs group by route and unreached routes show;
 without it, ids in URLs are blurred to `:id` and `:n`.
+
+**API coverage** (the coverage tab, beside routes; `report.json`'s
+`projects[].api`) lists each mock endpoint with its calls by outcome, the
+variants seen of those known, and the flows that called it, summed over every
+sweep. Endpoints in the inventory that nothing called are dimmed. It shows
+only for projects whose spec calls `apiCalls()`.
 
 For agents:
 

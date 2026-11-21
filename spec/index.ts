@@ -42,8 +42,14 @@ import {
   type InjectedFault,
 } from './faults.ts';
 import { hasSettled, persist, spinnerTime, type Persisted, type PersistStore, type SpinnerStore } from './settled.ts';
+import { freshApiCalls, type ApiSnapshot, type ApiWindow, type CallOutcome, type MockCall, type MockEndpoint } from './api.ts';
 
 export {
+  freshApiCalls,
+  type ApiSnapshot,
+  type CallOutcome,
+  type MockCall,
+  type MockEndpoint,
   consoleErrorExcused,
   faultInFlight,
   freshFailedWrite,
@@ -344,6 +350,29 @@ export const noBlankPage = ({
     return persisted(state, key, empty);
   });
   return always(() => !hasSettled(blank.current, { minStates, minMs }));
+};
+
+// ---------------------------------------------------------------- extractors
+
+/**
+ * Not a property: records, as the `api` snapshot, the mock API calls each
+ * state saw, for the report's API coverage. Call it once at the top level of
+ * the spec, and don't export it (Bombadil takes every export for a property
+ * or an action, and refuses anything else):
+ *
+ *   apiCalls();
+ *
+ * Reads window.__mockCalls (bombadil-kit/faults' createFaultInjector fills
+ * it; a mock layer of the app's own can too) and, once per document,
+ * window.__mockEndpoints, the inventory.
+ */
+export const apiCalls = () => {
+  const api = extract((state) => freshApiCalls(state.window as ApiWindow));
+  // The report reads the snapshot by this name. The bundler names an
+  // extractor after its variable; say it outright, in case it can't see this one.
+  const named = api as typeof api & { named?: (name: string) => unknown };
+  if (typeof named.named === 'function') named.named('api');
+  return api;
 };
 
 // ------------------------------------------------------------------- actions

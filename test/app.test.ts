@@ -75,6 +75,25 @@ test('createFaultInjector: isWrite fills `write`; without it there is none', () 
   }
 });
 
+test('createFaultInjector: logs every call on window.__mockCalls, ok or error', () => {
+  const g = globalThis as { window?: { __mockCalls?: { key: string; outcome: string; at: number }[] } };
+  g.window = {};
+  try {
+    createFaultInjector({ rate: 1, seed: 1 })('post', '/orders');
+    createFaultInjector({ rate: 0.000001, seed: 1 })('GET', '/orders/7');
+    createFaultInjector({ rate: 1, seed: 1 })('POST', '/mock/reset');
+    const calls = g.window.__mockCalls!;
+    assert.deepEqual(calls.map(({ key, outcome }) => ({ key, outcome })), [
+      { key: 'POST /orders', outcome: 'error' },
+      { key: 'GET /orders/7', outcome: 'ok' },
+      { key: 'POST /mock/reset', outcome: 'ok' },
+    ]);
+    assert.ok(Math.abs(calls[0]!.at - Date.now()) < 1000);
+  } finally {
+    delete g.window;
+  }
+});
+
 // --------------------------------------------------------------------- rtk
 
 const api = {} as BaseQueryApi;
