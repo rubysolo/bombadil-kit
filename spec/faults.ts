@@ -40,6 +40,29 @@ export const spinnerDeadline = (faults: readonly InjectedFault[], now: number, w
 };
 
 /**
+ * failedWritesShown's trigger: a failed write the first time a state sees it
+ * (freshFailedWrite, minus those in `triggered`, which it adds to). Once per
+ * write, not on every state while it's fresh: an alert that shows and is then
+ * cleared by a successful retry, or dismissed, has done its job.
+ */
+export const newFailedWrite = (
+  faults: readonly InjectedFault[],
+  now: number,
+  quiet: readonly RegExp[],
+  triggered: { has(f: InjectedFault): boolean; add(f: InjectedFault): unknown },
+  fresh = 1500,
+) => {
+  const fault = freshFailedWrite(
+    faults.filter((f) => !triggered.has(f)),
+    now,
+    quiet,
+    fresh,
+  );
+  if (fault) triggered.add(fault);
+  return fault;
+};
+
+/**
  * consoleQuietUnlessFaulted's excuse: a fault that may still be making the app
  * log. An error for `grace` ms after it; a slow response until `grace` ms
  * after it answers; a hang for `hangGrace` ms after it started (a hung

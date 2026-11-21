@@ -30,6 +30,7 @@ import {
   consoleErrorExcused,
   faultInFlight,
   freshFailedWrite,
+  newFailedWrite,
   isErrorFault,
   isWriteFault,
   spinnerDeadline,
@@ -45,6 +46,7 @@ export {
   faultInFlight,
   freshFailedWrite,
   hasSettled,
+  newFailedWrite,
   isErrorFault,
   isWriteFault,
   spinnerDeadline,
@@ -55,7 +57,7 @@ export {
   type Persisted,
 };
 
-type FaultWindow = Window & { __mockFaults?: InjectedFault[] };
+type FaultWindow = Window & { __mockFaults?: InjectedFault[]; __fuzzTriggered?: WeakSet<InjectedFault> };
 type PersistWindow = Window & { __fuzzPersisted?: PersistStore };
 type ActionGenerator = ReturnType<typeof actions>;
 
@@ -136,7 +138,9 @@ export const noSidewaysScroll = (tolerance = 1) => {
  * When the app's fault injector fails a write (`write: true`, or without it
  * anything but GET), the user is told within `within` seconds: something
  * matching `errorSelector` shows up with text in it. Reads `window.__mockFaults`
- * (bombadil-kit/faults); slow and hung faults don't count.
+ * (bombadil-kit/faults); slow and hung faults don't count. Once per failed
+ * write: an alert that shows and is then cleared (a retry that succeeds, the
+ * user dismissing it) has done its job.
  * `quiet`: writes that fail silently on purpose, as `/^METHOD \/path$/`.
  */
 export const failedWritesShown = ({
@@ -145,7 +149,9 @@ export const failedWritesShown = ({
   within = 5,
 } = {}) => {
   const failedWrite = extract((state) => {
-    const fault = freshFailedWrite((state.window as FaultWindow).__mockFaults ?? [], Date.now(), quiet);
+    const win = state.window as FaultWindow;
+    // On the window, like __mockFaults: a page load starts both over.
+    const fault = newFailedWrite(win.__mockFaults ?? [], Date.now(), quiet, (win.__fuzzTriggered ??= new WeakSet()));
     return fault ? `${fault.method} ${fault.path} → ${String(fault.status)}` : null;
   });
   const errorShown = extract((state) =>

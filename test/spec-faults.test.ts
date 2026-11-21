@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { consoleErrorExcused, unexcusedConsoleErrors, faultInFlight, freshFailedWrite, isWriteFault, type InjectedFault } from '../spec/faults.ts';
+import { consoleErrorExcused, unexcusedConsoleErrors, faultInFlight, freshFailedWrite, isWriteFault, newFailedWrite, type InjectedFault } from '../spec/faults.ts';
 import { FAULTS, INJECTED_MARKER } from '../src/app/faults.ts';
 
 const t = 1_000_000;
@@ -121,4 +121,28 @@ test('unexcusedConsoleErrors: the args of each error not excused, so the report 
   ]);
   assert.deepEqual(unexcusedConsoleErrors(entries, [fault()], t + 100), []);
   assert.equal(unexcusedConsoleErrors(entries, [], t).length, 3);
+});
+
+test('newFailedWrite: each failed write triggers once, at the first state that sees it', () => {
+  const triggered = new Set<InjectedFault>();
+  const f = fault();
+  assert.equal(newFailedWrite([f], t + 10, [], triggered), f);
+  // Later states inside its fresh window: already triggered. A retry that clears
+  // the alert, or the user dismissing it, must not demand a second one.
+  assert.equal(newFailedWrite([f], t + 40, [], triggered), undefined);
+  assert.equal(newFailedWrite([f], t + 1400, [], triggered), undefined);
+  const g = fault({ at: t + 1000, path: '/payments' });
+  assert.equal(newFailedWrite([f, g], t + 1100, [], triggered), g);
+  assert.equal(newFailedWrite([f, g], t + 1200, [], triggered), undefined);
+});
+
+test('newFailedWrite: two in one state trigger on consecutive states; stale, quiet and slow ones never', () => {
+  const triggered = new Set<InjectedFault>();
+  const a = fault({ path: '/a' });
+  const b = fault({ path: '/b' });
+  assert.equal(newFailedWrite([a, b], t + 10, [], triggered), a);
+  assert.equal(newFailedWrite([a, b], t + 40, [], triggered), b);
+  assert.equal(newFailedWrite([fault()], t + 1500, [], new Set()), undefined);
+  assert.equal(newFailedWrite([fault()], t + 10, [/^POST \/orders$/], new Set()), undefined);
+  assert.equal(newFailedWrite([fault({ kind: 'slow', delayMs: 10 })], t + 10, [], new Set()), undefined);
 });
