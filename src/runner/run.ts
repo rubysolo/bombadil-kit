@@ -88,6 +88,41 @@ export const bombadilArgs = (o: {
   return args;
 };
 
+type Target = NonNullable<ProjectConfig['target']>;
+
+/** What a sweep runs with: options, then the project's defaults. A live project defaults to no faults and refuses any. */
+export const sweepSettings = (p: Pick<ProjectConfig, 'target' | 'defaults'>, o: Partial<RunOptions>) => {
+  const live = p.target === 'live';
+  const faults = o.faults ?? p.defaults?.faults ?? (live ? 0 : 0.1);
+  if (live && faults > 0) throw new Error('a live project has no fault injector: faults need the mock (target: "mock")');
+  return { time: o.time ?? p.defaults?.time ?? '1m', faults, latency: o.latency ?? p.defaults?.latency ?? 50 };
+};
+
+interface SweepRecord {
+  flow: string;
+  faults: number;
+  latency: number;
+  seed: number;
+  refDate: string;
+  time: string;
+  width: number;
+  height: number;
+}
+
+/** run.json's `target`: what the run ran against. A live run records only what the runner controls. */
+export const runTarget = (kind: Target, r: SweepRecord): Record<string, unknown> =>
+  kind === 'live'
+    ? { kind, flow: r.flow, viewport: `${r.width}x${r.height}` }
+    : { kind, flow: r.flow, faults: r.faults, latency_ms: r.latency, viewport: `${r.width}x${r.height}`, mock_ref_date: r.refDate };
+
+/** The command that runs this flow again: with a mock, the same seed, faults and data; live, only the same flow and viewport. */
+export const rerunCommand = (kind: Target, r: SweepRecord, project: string[] = []) =>
+  [
+    'npx bombadil-kit run', ...project, '--flow', r.flow,
+    ...(kind === 'live' ? [] : ['--seed', r.seed, '--faults', r.faults, '--ref-date', r.refDate]),
+    '--time', r.time, '--width', r.width, '--height', r.height,
+  ].join(' ');
+
 /**
  * One sweep: starts the dev server once, runs Bombadil once per flow, writes
  * each run's run.json, stops the server, rebuilds the report once.
@@ -98,9 +133,8 @@ export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
   const { root, config, out } = loaded;
   const p: ProjectConfig = config.projects[o.project]!;
   const flows = selectFlows(readFlows(root, p), o.flows);
-  const time = o.time ?? p.defaults?.time ?? '1m';
-  const faults = o.faults ?? p.defaults?.faults ?? 0.1;
-  const latency = o.latency ?? p.defaults?.latency ?? 50;
+  const kind: Target = p.target ?? 'mock';
+  const { time, faults, latency } = sweepSettings(p, o);
   const seed = o.seed ?? Math.floor(Math.random() * 32768);
   const refDate = o.refDate ?? new Date().toISOString().slice(0, 10);
   const width = o.width ?? p.viewport?.width ?? 390;
@@ -165,7 +199,7 @@ export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
         signedInCookie: p.signedInCookie, root, appDir: p.dir,
       });
 
-      console.error(`→ ${flow.name}: ${origin}${flow.start} for ${time} (faults ${faults}, seed ${seed})`);
+      console.error(`→ ${flow.name}: ${origin}${flow.start} for ${time} (${kind === 'live' ? 'live backend' : `faults ${faults}, seed ${seed}`})`);
       const mark = statSync(logPath).size;
       const startedAt = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
       const child = spawn(bombadil, args, { cwd: root, stdio: ['ignore', 'inherit', 'pipe'] });
@@ -184,10 +218,8 @@ export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
       }
 
       // What the report reads about this run (src/report/runs.ts RunMeta).
-      const again = [
-        'npx bombadil-kit run', ...(Object.keys(config.projects).length > 1 ? ['--project', o.project] : []),
-        '--flow', flow.name, '--seed', seed, '--faults', faults, '--ref-date', refDate, '--time', time, '--width', width, '--height', height,
-      ].join(' ');
+      const record = { flow: flow.name, faults, latency, seed, refDate, time, width, height };
+      const again = rerunCommand(kind, record, Object.keys(config.projects).length > 1 ? ['--project', o.project] : []);
       writeFileSync(
         join(outDir, 'run.json'),
         `${JSON.stringify(
@@ -200,7 +232,7 @@ export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
             start: flow.start,
             started_at: startedAt,
             commit,
-            target: { kind: 'mock', flow: flow.name, faults, latency_ms: latency, viewport: `${width}x${height}`, mock_ref_date: refDate },
+            target: runTarget(kind, record),
             bombadil: version,
             exit_code: rc,
             time_limit: time,
