@@ -3,7 +3,7 @@ import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, wri
 import { join, relative, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fill, readFlows, specsDir, type Flow, type Loaded, type ProjectConfig } from '../config.ts';
-import { listRuns, type RunMeta } from '../report/runs.ts';
+import type { RunMeta } from '../report/runs.ts';
 import { generate } from '../report/generate.ts';
 
 export interface RunOptions {
