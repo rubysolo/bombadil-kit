@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { consoleErrorExcused, faultInFlight, freshFailedWrite, isWriteFault, type InjectedFault } from '../spec/faults.ts';
+import { consoleErrorExcused, unexcusedConsoleErrors, faultInFlight, freshFailedWrite, isWriteFault, type InjectedFault } from '../spec/faults.ts';
 import { FAULTS, INJECTED_MARKER } from '../src/app/faults.ts';
 
 const t = 1_000_000;
@@ -106,4 +106,19 @@ test('consoleErrorExcused: without `injected`, the old timing excuse', () => {
 
 test('the built-in faults carry INJECTED_MARKER, so `injected` excuses each of them', () => {
   for (const f of FAULTS) assert.match(JSON.stringify(f), injected, `status ${String(f.status)}`);
+});
+
+test('unexcusedConsoleErrors: the args of each error not excused, so the report can name and tell them apart', () => {
+  const entries = [
+    { level: 'error', args: [`Save failed (${INJECTED_MARKER})`] },
+    { level: 'warning', args: ['not an error'] },
+    { level: 'error', args: ['Warning: Each child in a list should have a unique "key" prop.'] },
+    { level: 'error', args: ['Warning: Cannot update a component while rendering a different component'] },
+  ];
+  assert.deepEqual(unexcusedConsoleErrors(entries, [fault()], t + 100, { injected }), [
+    ['Warning: Each child in a list should have a unique "key" prop.'],
+    ['Warning: Cannot update a component while rendering a different component'],
+  ]);
+  assert.deepEqual(unexcusedConsoleErrors(entries, [fault()], t + 100), []);
+  assert.equal(unexcusedConsoleErrors(entries, [], t).length, 3);
 });
