@@ -1,7 +1,7 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { visibleOutside } from '../spec/dom.ts';
-import { spinnerDeadline, type InjectedFault } from '../spec/faults.ts';
+import { hungSince, slowOverlap, spinnerDeadline, type InjectedFault } from '../spec/faults.ts';
 import { spinnerTime, type SpinnerStore } from '../spec/settled.ts';
 
 // Just enough of an Element: a box, and `closest` against the selectors it sits inside.
@@ -93,4 +93,83 @@ test('spinnerTime: each path keeps its own tally', () => {
   assert.equal(spinnerTime(store, '/b', false, t + 600), 0);
   assert.equal(spinnerTime(store, '/a', true, t + 700), 430);
   assert.equal(spinnerTime(store, '/a', true, t + 760), 490);
+});
+
+// spinnersClear, one capture: the tally, and whether it's a violation.
+const capture = (store: SpinnerStore, key: string, spinning: boolean, now: number, faults: InjectedFault[] = [], within = 15) => {
+  const ms = spinnerTime(store, key, spinning, now, faults);
+  return { ms, stuck: !hungSince(faults) && ms > within * 1000 };
+};
+
+test('spinnersClear: 20s of spinner excused by a hang, then a reload into a healthy world, is not a violation', () => {
+  const store: SpinnerStore = { paths: {} };
+  const hung = [fault({ kind: 'hang' })];
+  for (let ms = 0; ms <= 20_000; ms += 500) assert.equal(capture(store, '/certificates', true, t + ms, hung).stuck, false);
+  // A full reload of the same path: __mockFaults starts over, the tally (sessionStorage) doesn't.
+  const first = capture(store, '/certificates', true, t + 20_600);
+  assert.equal(first.stuck, false);
+  assert.equal(first.ms, 0);
+  // The ordinary loading spinner: its own time counts from here.
+  assert.equal(capture(store, '/certificates', true, t + 20_900).ms, 300);
+});
+
+test('spinnersClear: a stuck spinner across many short visits is still caught, hung visits between them or not', () => {
+  const store: SpinnerStore = { paths: {} };
+  let now = t;
+  let stuck = false;
+  for (let visit = 0; visit < 120 && !stuck; visit++) {
+    // Every third visit is a page load in a hung world: excused, but it doesn't wipe the evidence.
+    const faults = visit % 3 === 2 ? [fault({ kind: 'hang', at: now })] : [];
+    capture(store, '/cart', true, now, faults);
+    stuck = capture(store, '/cart', true, now + 200, faults).stuck;
+    capture(store, '/', false, now + 250);
+    now += 1000;
+  }
+  assert.equal(stuck, true);
+  assert.ok(store.paths['/cart']! > 15_000);
+});
+
+test('spinnersClear: time a slow fault is in flight is not credited; the rest is', () => {
+  const store: SpinnerStore = { paths: {} };
+  const slow = [fault({ kind: 'slow', delayMs: 8000 })];
+  capture(store, '/cart', true, t, slow);
+  assert.equal(capture(store, '/cart', true, t + 8000, slow).ms, 0);
+  assert.equal(capture(store, '/cart', true, t + 9000, slow).ms, 1000);
+  // Visits that only ever wait on slow requests never add up.
+  const other: SpinnerStore = { paths: {} };
+  for (let i = 0; i < 100; i++) {
+    const at = t + i * 1000;
+    const f = [fault({ kind: 'slow', delayMs: 2000, at })];
+    capture(other, '/orders', true, at, f);
+    capture(other, '/', false, at + 300, f);
+  }
+  assert.equal(other.paths['/orders'] ?? 0, 0);
+});
+
+test('slowOverlap: the part of an interval slow faults were in flight, overlaps once', () => {
+  const a = fault({ kind: 'slow', delayMs: 2000 });
+  const b = fault({ kind: 'slow', delayMs: 2000, at: t + 1000 });
+  assert.equal(slowOverlap([a], t - 1000, t + 5000), 2000);
+  assert.equal(slowOverlap([a, b], t, t + 5000), 3000);
+  assert.equal(slowOverlap([a, b], t + 2500, t + 5000), 500);
+  assert.equal(slowOverlap([a, fault(), fault({ kind: 'hang' }), fault({ kind: 'slow' })], t + 3000, t + 5000), 0);
+});
+
+test('spinnersClear: `key` keeps one tally per query-string page', () => {
+  const loc = (search: string) => ({ pathname: '/', search }) as Location;
+  const byPath = (l: Location) => l.pathname;
+  const bySearch = (l: Location) => l.pathname + l.search;
+  // /?id=open spins briefly on each visit; /?id=closed loads fine.
+  const run = (key: (l: Location) => string) => {
+    const store: SpinnerStore = { paths: {} };
+    for (let i = 0; i < 40; i++) {
+      const at = t + i * 1000;
+      capture(store, key(loc('?id=open')), true, at);
+      capture(store, key(loc('?id=closed')), false, at + 500);
+    }
+    return capture(store, key(loc('?id=open')), true, t + 40_000).ms;
+  };
+  // By pathname, the healthy page's every load wipes the stuck page's tally.
+  assert.equal(run(byPath), 0);
+  assert.equal(run(bySearch), 20_000);
 });

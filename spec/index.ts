@@ -41,6 +41,8 @@ import {
   requestPattern,
   isErrorFault,
   isWriteFault,
+  hungSince,
+  slowOverlap,
   spinnerDeadline,
   unexcusedConsoleErrors,
   type ConsoleExcuse,
@@ -69,6 +71,8 @@ export {
   requestPattern,
   isErrorFault,
   isWriteFault,
+  hungSince,
+  slowOverlap,
   spinnerDeadline,
   unexcusedConsoleErrors,
   type ConsoleExcuse,
@@ -122,26 +126,31 @@ export const errorBoundaryNeverShown = (selector = '[data-testid="error-boundary
  * never for long on one; the tally (sessionStorage, so it outlives the walker's
  * reloads) is how it's caught. On a mock API that answers in milliseconds, one
  * that outlives `within` is waiting on a request that failed and was never
- * handled. Reads `window.__mockFaults`: a slow fault still in flight adds its
- * `delayMs` to the deadline, and once a hang was injected the property holds (a
- * hung request spins forever).
+ * handled. Reads `window.__mockFaults` for excused time, which never enters the
+ * tally: none while a hang was injected since the page loaded (a hung request
+ * spins forever, and a reload into a healthy world doesn't inherit it), and
+ * only the time beyond a slow fault's `delayMs` (the total is compared with
+ * `within` as is).
  * `exclude`: spinners inside an element matching it are meant to run long.
+ * `key`: what a tally is kept per (default the pathname); an app that routes
+ * on the query string gives `(loc) => loc.pathname + loc.search`.
  */
 export const spinnersClear = ({
   selector = LOADING,
   within = 15,
   exclude,
-}: { selector?: string; within?: number; exclude?: string } = {}) => {
+  key = (loc: Location) => loc.pathname,
+}: { selector?: string; within?: number; exclude?: string; key?: (loc: Location) => string } = {}) => {
   const stuck = extract((state) => {
     const win = state.window as FaultWindow & SpinnerWindow;
     const at = Date.now();
-    const path = win.location.pathname;
-    const deadline = spinnerDeadline(win.__mockFaults ?? [], at, within);
+    const path = key(win.location);
+    const faults = win.__mockFaults ?? [];
     const store = spinnerStore(win);
-    const ms = spinnerTime(store.value, path, visibleOutside(state.document.querySelectorAll(selector), exclude), at);
+    const ms = spinnerTime(store.value, path, visibleOutside(state.document.querySelectorAll(selector), exclude), at, faults);
     store.save();
     // A string, so the report names the path and tells stuck paths apart.
-    return deadline !== null && ms > deadline ? `${path}: still loading after ${Math.round(ms / 1000)}s in all` : null;
+    return !hungSince(faults) && ms > within * 1000 ? `${path}: still loading after ${Math.round(ms / 1000)}s in all` : null;
   });
   return always(() => stuck.current === null);
 };
