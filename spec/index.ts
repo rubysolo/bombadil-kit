@@ -32,6 +32,7 @@ import {
   isErrorFault,
   isWriteFault,
   spinnerDeadline,
+  unexcusedErrors,
   type ConsoleExcuse,
   type FaultKind,
   type InjectedFault,
@@ -44,6 +45,7 @@ export {
   isErrorFault,
   isWriteFault,
   spinnerDeadline,
+  unexcusedErrors,
   type ConsoleExcuse,
   type FaultKind,
   type InjectedFault,
@@ -154,12 +156,12 @@ export const failedWritesShown = ({
 export const consoleQuietUnlessFaulted = (options: number | ConsoleExcuse = 5000, hangGrace?: number) => {
   const excuse: ConsoleExcuse =
     typeof options === 'number' ? { grace: options, ...(hangGrace === undefined ? {} : { hangGrace }) } : options;
-  const unexcused = extract((state) => {
-    const faults = (state.window as FaultWindow).__mockFaults ?? [];
-    const now = Date.now();
-    return state.console.filter((e) => e.level === 'error' && !consoleErrorExcused(e.args, faults, now, excuse)).length;
-  });
-  return always(() => unexcused.current === 0);
+  // The errors' args, not a count: the report takes a finding's summary and
+  // id from the first string in its snapshots.
+  const errors = extract((state) =>
+    unexcusedErrors(state.console, (state.window as FaultWindow).__mockFaults ?? [], Date.now(), excuse),
+  );
+  return always(() => errors.current.length === 0);
 };
 
 /**

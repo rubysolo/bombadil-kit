@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { consoleErrorExcused, faultInFlight, freshFailedWrite, isWriteFault, type InjectedFault } from '../spec/faults.ts';
+import { consoleErrorExcused, faultInFlight, freshFailedWrite, isWriteFault, unexcusedErrors, type InjectedFault } from '../spec/faults.ts';
 import { FAULTS, INJECTED_MARKER } from '../src/app/faults.ts';
 
 const t = 1_000_000;
@@ -106,4 +106,27 @@ test('consoleErrorExcused: without `injected`, the old timing excuse', () => {
 
 test('the built-in faults carry INJECTED_MARKER, so `injected` excuses each of them', () => {
   for (const f of FAULTS) assert.match(JSON.stringify(f), injected, `status ${String(f.status)}`);
+});
+
+test("unexcusedErrors: the snapshot names the finding by its console message, with v0.2's id", async () => {
+  const { detailKey, detailText, findingId } = await import('../src/report/findings.ts');
+  const message = 'A non-serializable value was detected in an action, in the path: `payload`.';
+  const entries = [
+    { level: 'log', args: ['hello'] },
+    { level: 'error', args: [message, 'Object'] },
+  ];
+  const now = t + 60_000;
+  const errors = unexcusedErrors(entries, [fault()], now);
+  assert.deepEqual(errors, [[message, 'Object']]);
+  assert.equal(detailText([{ name: 'errors', value: errors }]), message);
+  // v0.2's snapshot: every console error's args, under the same name.
+  const before = [{ name: 'errors', value: entries.filter((e) => e.level === 'error').map((e) => e.args) }];
+  const id = (snaps: { name: string; value: unknown }[]) => findingId('app', 'quiet', '/orders/:id', detailKey(snaps));
+  assert.equal(id([{ name: 'errors', value: errors }]), id(before));
+});
+
+test('unexcusedErrors: errors a fault excuses are left out, by time or by marker', () => {
+  const entries = [{ level: 'error', args: ['Save failed'] }, { level: 'error', args: [`x (${INJECTED_MARKER})`] }];
+  assert.deepEqual(unexcusedErrors(entries, [fault()], t + 100), []);
+  assert.deepEqual(unexcusedErrors(entries, [fault()], t + 100, { injected }), [['Save failed']]);
 });
