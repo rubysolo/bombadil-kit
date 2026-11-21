@@ -57,7 +57,7 @@ test('the coverage tab shows API coverage: calls by outcome, variants seen/known
   const page = rendered(
     project({
       endpoints: [
-        { key: 'OrderController.getOrder', flows: ['order'], outcomes: { ok: 2, hang: 1 }, variantsSeen: ['locked'], variantsKnown: ['default', 'locked'], known: true },
+        { key: 'OrderController.getOrder', flows: ['order'], outcomes: { hang: 1, ok: 2 }, variantsSeen: ['locked'], variantsKnown: ['default', 'locked'], known: true },
         { key: 'OrderController.save', flows: [], outcomes: {}, variantsSeen: [], variantsKnown: [], known: true },
         { key: 'GET /<script>', flows: ['order'], outcomes: { error: 1 }, variantsSeen: [], variantsKnown: [], known: false },
       ],
@@ -74,6 +74,7 @@ test('the coverage tab shows API coverage: calls by outcome, variants seen/known
 
 test('the coverage tab has no API section when no run had api data', () => {
   const page = rendered(project(), '#/p/web/coverage');
+  assert.match(page, /<h2>Routes<\/h2><span[^>]*>1\/1 routes reached/);
   assert.match(page, /class="routes"/);
   assert.doesNotMatch(page, /API coverage/);
 });

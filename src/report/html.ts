@@ -221,7 +221,8 @@ function apiSection(api) {
   const head = '<div class="head api"><h2>API coverage</h2><span class="dim" style="font-size:12px">' +
     (api.known ? api.reached + '/' + api.known + ' endpoints reached' : api.endpoints.length + ' endpoints called') + '</span></div>';
   const rows = api.endpoints.map((e) => {
-    const calls = Object.entries(e.outcomes).map(([o, n]) => '<span class="' + (OUTCOME[o] || '') + '">' + n.toLocaleString('en-US') + ' ' + esc(o) + '</span>').join(' · ');
+    // Always in this order, however the calls came in.
+    const calls = Object.keys(OUTCOME).filter((o) => e.outcomes[o]).map((o) => [o, e.outcomes[o]]).map(([o, n]) => '<span class="' + (OUTCOME[o] || '') + '">' + n.toLocaleString('en-US') + ' ' + esc(o) + '</span>').join(' · ');
     const variants = e.variantsKnown.length || e.variantsSeen.length
       ? e.variantsKnown.concat(e.variantsSeen.filter((v) => !e.variantsKnown.includes(v))).map((v) => '<span class="' + (e.variantsSeen.includes(v) ? 'w' : 'dim') + '">' + esc(v) + '</span>').join(' ') +
         (e.variantsKnown.length ? ' <span class="dim">' + e.variantsSeen.filter((v) => e.variantsKnown.includes(v)).length + '/' + e.variantsKnown.length + '</span>' : '')
@@ -250,7 +251,9 @@ function project(name, tab) {
           '<span>' + squares(f) + '</span></a>').join('') + '</div>'
       : '<div class="empty">No findings. Every property held on every route it reached.</div>';
   } else if (tab === 'coverage') {
-    body = '<div class="routes">' + p.routes.map((r) =>
+    const reached = p.routes.filter((r) => r.states > 0).length;
+    body = '<div class="head"><h2>Routes</h2><span class="dim" style="font-size:12px">' + reached + '/' + p.routes.length + ' routes reached</span></div>' +
+      '<div class="routes">' + p.routes.map((r) =>
       '<div class="route' + (openRoutes.has(r.template) ? ' bad' : r.states === 0 ? ' none' : '') + '"><b title="' + esc(r.template) + '">' + routeLabel(r.template) + '</b><small>' +
       (r.states ? r.states.toLocaleString('en-US') + ' states' : 'never reached') + (r.known ? '' : ' · not in routes.json') + '</small></div>').join('') + '</div>' +
       '<div class="empty">Dashed routes were never reached: give the fuzzer a fixture or a start URL for them. Routes come from routes.json beside the spec.</div>' +
