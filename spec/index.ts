@@ -41,7 +41,7 @@ import {
   type FaultKind,
   type InjectedFault,
 } from './faults.ts';
-import { hasSettled, persist, type Persisted, type PersistStore } from './settled.ts';
+import { hasSettled, persist, spinnerTime, type Persisted, type PersistStore, type SpinnerStore } from './settled.ts';
 
 export {
   consoleErrorExcused,
@@ -98,11 +98,16 @@ export const errorBoundaryNeverShown = (selector = '[data-testid="error-boundary
 };
 
 /**
- * A visible loading indicator clears within `within` seconds. On a mock API
- * that answers in milliseconds, one that outlives that is waiting on a
- * request that failed and was never handled. Reads `window.__mockFaults`:
- * a slow fault still in flight adds its `delayMs` to the deadline, and once a
- * hang was injected the property holds (a hung request spins forever).
+ * A visible loading indicator clears within `within` seconds: on any one path,
+ * a spinner shows for at most that long in all, added up across visits, before
+ * the path is seen without one. A random walker leaves a page within a fraction
+ * of a second, so a spinner that never clears is seen briefly on every visit,
+ * never for long on one; the tally (sessionStorage, so it outlives the walker's
+ * reloads) is how it's caught. On a mock API that answers in milliseconds, one
+ * that outlives `within` is waiting on a request that failed and was never
+ * handled. Reads `window.__mockFaults`: a slow fault still in flight adds its
+ * `delayMs` to the deadline, and once a hang was injected the property holds (a
+ * hung request spins forever).
  * `exclude`: spinners inside an element matching it are meant to run long.
  */
 export const spinnersClear = ({
@@ -110,10 +115,32 @@ export const spinnersClear = ({
   within = 15,
   exclude,
 }: { selector?: string; within?: number; exclude?: string } = {}) => {
-  const spinning = extract((state) => visibleOutside(state.document.querySelectorAll(selector), exclude));
-  const deadline = extract((state) => spinnerDeadline((state.window as FaultWindow).__mockFaults ?? [], Date.now(), within));
-  const settled = () => !spinning.current || deadline.current === null;
-  return always(() => (settled() ? true : eventually(settled).within(deadline.current!, 'milliseconds')));
+  const stuck = extract((state) => {
+    const win = state.window as FaultWindow & SpinnerWindow;
+    const at = Date.now();
+    const path = win.location.pathname;
+    const deadline = spinnerDeadline(win.__mockFaults ?? [], at, within);
+    const store = spinnerStore(win);
+    const ms = spinnerTime(store.value, path, visibleOutside(state.document.querySelectorAll(selector), exclude), at);
+    store.save();
+    // A string, so the report names the path and tells stuck paths apart.
+    return deadline !== null && ms > deadline ? `${path}: still loading after ${Math.round(ms / 1000)}s in all` : null;
+  });
+  return always(() => stuck.current === null);
+};
+
+const SPINNER_KEY = 'bombadil-kit:spinners';
+type SpinnerWindow = Window & { __fuzzSpinners?: SpinnerStore };
+
+/** spinnersClear's tally: in sessionStorage, which a reload keeps; on the window if storage throws. */
+const spinnerStore = (win: SpinnerWindow) => {
+  try {
+    const value = JSON.parse(win.sessionStorage.getItem(SPINNER_KEY) ?? 'null') as SpinnerStore | null;
+    const store = value ?? { paths: {} };
+    return { value: store, save: () => win.sessionStorage.setItem(SPINNER_KEY, JSON.stringify(store)) };
+  } catch {
+    return { value: (win.__fuzzSpinners ??= { paths: {} }), save: () => {} };
+  }
 };
 
 /** Text that means a JS value reached the page unformatted. */

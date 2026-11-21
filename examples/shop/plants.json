@@ -1,10 +1,6 @@
 {
   "crash": { "property": "noErrorBoundary", "flow": "explore" },
-  "spinner": {
-    "property": "spinnersSettle",
-    "flow": "buy",
-    "known": "the walker never stays on a page the 15s spinnersClear waits for (longest stay on /cart: 0.14s), so a spinner that never clears goes unseen"
-  },
+  "spinner": { "property": "spinnersSettle", "flow": "buy" },
   "leak": { "property": "noLeakedValues", "flow": "buy" },
   "overflow": { "property": "noHorizontalOverflow", "flow": "explore" },
   "silent-write": { "property": "failedWritesAreShown", "flow": "buy", "faults": 0.5 },

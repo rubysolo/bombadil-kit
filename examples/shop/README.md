@@ -32,7 +32,7 @@ npx bombadil-kit run               # a plain sweep; report in tmp/bombadil/repor
 | plant | bug | caught by |
 |---|---|---|
 | `crash` | the product page throws while rendering | `errorBoundaryNeverShown` |
-| `spinner` | the cart's spinner never clears | `spinnersClear`: **known gap**, the walker never stays 15s on a page |
+| `spinner` | the cart's spinner never clears | `spinnersClear` |
 | `leak` | the price shows `undefined` | `noLeakedText` |
 | `overflow` | the product list is 1200px wide | `noSidewaysScroll` |
 | `silent-write` | a failed add-to-cart shows nothing | `failedWritesShown` |

@@ -33,3 +33,27 @@ export const persist = (store: PersistStore, key: string, entry: number, active:
  */
 export const hasSettled = ({ ms, states }: Persisted, { minStates = 3, minMs = 1000 } = {}) =>
   states >= minStates && ms >= minMs;
+
+/** Where `spinnerTime` keeps its tally: ms of spinner per path, and the last capture that showed one. */
+export type SpinnerStore = { paths: Record<string, number>; last?: { path: string; at: number } };
+
+/**
+ * spinnersClear's measure: how long a spinner has shown on `path`, added up
+ * across visits, since the path was last seen without one. A random walker
+ * leaves a page within a fraction of a second, so a spinner that never clears
+ * is never seen for long in one visit; it is seen on every visit. A capture
+ * that shows a spinner is credited with the time until the next capture,
+ * wherever that is: it was on screen until then.
+ */
+export const spinnerTime = (store: SpinnerStore, path: string, spinning: boolean, now: number): number => {
+  const last = store.last;
+  if (last && last.path in store.paths) store.paths[last.path]! += now - last.at;
+  if (!spinning) {
+    delete store.paths[path];
+    delete store.last;
+    return 0;
+  }
+  store.paths[path] ??= 0;
+  store.last = { path, at: now };
+  return store.paths[path];
+};

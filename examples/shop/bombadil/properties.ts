@@ -14,7 +14,8 @@ import {
 import { INJECTED_MARKER } from 'bombadil-kit/faults';
 
 export const noErrorBoundary = errorBoundaryNeverShown('[data-testid="error-boundary-fallback"]');
-export const spinnersSettle = spinnersClear();
+// The mock answers in 50ms; a clean sweep's worst path shows a spinner ~0.3s in all.
+export const spinnersSettle = spinnersClear({ within: 3 });
 export const noLeakedValues = noLeakedText();
 export const noHorizontalOverflow = noSidewaysScroll();
 export const failedWritesAreShown = failedWritesShown({ errorSelector: '[role="alert"]' });
