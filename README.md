@@ -36,7 +36,7 @@ licensed; maintained as-is.
 ## Install
 
 ```bash
-npm i -D https://github.com/rubysolo/bombadil-kit/releases/download/v0.2.0/bombadil-kit-0.2.0.tgz \
+npm i -D https://github.com/rubysolo/bombadil-kit/releases/download/v0.3.0/bombadil-kit-0.3.0.tgz \
   @antithesishq/bombadil@0.7.10 esbuild
 ```
 
