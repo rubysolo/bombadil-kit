@@ -1,0 +1,40 @@
+#!/usr/bin/env bash
+#
+# bin/worktree-setup — provision a new worktree. `wt` runs it after creating
+# the worktree; re-running it by hand is safe.
+#
+# Build artifacts are copy-on-write clones of the main worktree's: on APFS
+# (`cp -c`) or a reflink filesystem (`cp --reflink`) a copy of node_modules is
+# instant and shares disk blocks until a file changes. `npm install` then
+# reconciles the copy with this branch's lockfile, and its `prepare` script
+# rebuilds dist from this branch's source.
+
+set -euo pipefail
+
+say() { printf '%s\n' "$*" >&2; }
+
+cd "$(dirname "$0")/.."
+here=$(pwd -P)
+main=$(cd "$(git rev-parse --git-common-dir)/.." && pwd -P)/main
+
+# Clone src to dest, copy-on-write where the filesystem supports it, a plain
+# copy where it doesn't.
+cow_copy() {
+    if cp -c -R "$1" "$2" 2>/dev/null; then return; fi # macOS: clonefile(2)
+    rm -rf "$2"
+    if cp --reflink=auto -R "$1" "$2" 2>/dev/null; then return; fi # GNU
+    rm -rf "$2"
+    cp -R "$1" "$2"
+}
+
+if [ "$here" != "$main" ] && [ -d "$main" ]; then
+    for dir in node_modules dist; do
+        if [ -d "$main/$dir" ] && [ ! -e "$dir" ]; then
+            say "Cloning $dir from main (copy-on-write)…"
+            cow_copy "$main/$dir" "$dir"
+        fi
+    done
+fi
+
+say "npm install…"
+npm install --no-audit --no-fund >&2
