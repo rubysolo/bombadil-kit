@@ -147,7 +147,7 @@ bundle declare `x` twice, and the spec won't load.
 | `spinnersClear({ selector, within, exclude })` | a visible loading indicator clears within 15s, plus the `delayMs` of a slow fault still in flight; any hang since the page loaded excuses it. Spinners inside `exclude` (a selector: a modal meant to show 30s of progress) don't count |
 | `noLeakedText(pattern?)` | no `undefined`, `NaN`, `[object Object]`, `Invalid Date`, `null` in the text |
 | `noSidewaysScroll(tolerance?)` | the page never scrolls horizontally |
-| `failedWritesShown({ quiet, errorSelector, within })` | a write the fault injector failed is followed by a visible error within 5s, once per write (a retry or dismissal may clear it); slow and hung writes don't count |
+| `failedWritesShown({ quiet, errorSelector, within })` | a write the fault injector failed shows a visible error on the page the user is on when it fails, within 5s and before they leave; an alert on another page doesn't count, and one alert per write will do (a retry or Dismiss may clear it). Slow and hung writes don't count |
 | `consoleQuietUnlessFaulted(grace?, hangGrace?)` | no console error, except within 5s of an injected error, 5s after a slow response answers, or `hangGrace` (default `grace`) after a hang started; also takes `{ grace, hangGrace }` |
 | `consoleQuietUnlessFaulted({ injected })` | no console error, except one whose text matches `injected` (the marker the mock layer puts in what it injects), whenever it lands; with the built-in injector, `new RegExp(INJECTED_MARKER)`. Needs `installFuzzConsole` when the marker is inside a logged object: Bombadil records those as `"Object"` |
 | `nothingUnder({ selector, container })` | no text is drawn over, say, a floating header's logo |
