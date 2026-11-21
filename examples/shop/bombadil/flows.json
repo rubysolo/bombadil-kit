@@ -13,5 +13,12 @@
     "allow": ["/products/*", "/cart", "/checkout", "/orders/*"],
     "spec": "flow",
     "milestones": ["added", "ordered"]
+  },
+  {
+    "name": "reviews",
+    "about": "A product and its reviews, fetched on every visit with no cache: a slow request the walker keeps leaving must not look like a stuck spinner.",
+    "start": "/products/1",
+    "allow": ["/products/*", "/reviews/*"],
+    "spec": "flow"
   }
 ]

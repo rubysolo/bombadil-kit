@@ -16,8 +16,10 @@ import {
 import { INJECTED_MARKER } from 'bombadil-kit/faults';
 
 export const noErrorBoundary = errorBoundaryNeverShown('[data-testid="error-boundary-fallback"]');
-// The mock answers in 50ms; a clean sweep's worst path shows a spinner ~0.3s in all.
-export const spinnersSettle = spinnersClear({ within: 3 });
+// withFaults and startMockRequest count requests in flight, so `within` can be small:
+// in 30s a stuck spinner gets ~0.9-1.1s of idle time (28-33% of its spinner time);
+// the slow reviews page ~0.07s (1%).
+export const spinnersSettle = spinnersClear({ within: 0.5 });
 export const noLeakedValues = noLeakedText();
 export const noHorizontalOverflow = noSidewaysScroll();
 export const failedWritesAreShown = failedWritesShown({ errorSelector: '[role="alert"]' });
