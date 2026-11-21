@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { describeAction, detailKey, detailText, findingId, routeTemplate } from '../src/report/findings.ts';
 import { readRun } from '../src/report/runs.ts';
-import { always, rendering, row, timedOut, tmp, writeRun } from './helpers.ts';
+import { always, calling, rendering, row, timedOut, tmp, writeRun } from './helpers.ts';
 
 test('routeTemplate prefers a known route pattern', () => {
   const known = ['/orders/:orderNumber/prepare-store', '/login'];
@@ -116,4 +116,41 @@ test('readRun collects every source file the run rendered', () => {
   const run = readRun(dir, []);
   assert.equal(run.meta.flow, 'deposit');
   assert.deepEqual(run.rendered, ['apps/a/src/App.tsx', 'apps/a/src/pages/Dashboard.tsx', 'apps/a/src/pages/Login.tsx']);
+});
+
+test('readRun counts the mock API calls per endpoint and outcome, with the variants seen and the inventory', () => {
+  const inventory = [
+    { key: 'OrderController.getOrder', variants: ['default', 'locked'] },
+    { key: 'OrderController.save', variants: [] },
+    { key: 'GET /orders/:orderNumber', variants: [] },
+  ];
+  const dir = writeRun(tmp(), {
+    id: 'r1',
+    rows: [
+      calling(row(0, '/orders', null), [{ key: 'OrderController.getOrder', variant: 'locked', outcome: 'ok' }], inventory),
+      calling(row(1, '/orders', 'Wait'), [
+        { key: 'OrderController.getOrder', variant: 'default', outcome: 'slow' },
+        { key: 'OrderController.getOrder', variant: 'locked', outcome: 'ok' },
+        { key: 'GET /orders/1001', outcome: 'error' },
+        { key: 'GET /orders/1002?full=1', outcome: 'ok' },
+        { key: 'POST /carts/42/items', outcome: 'ok' },
+      ]),
+      row(2, '/orders', 'Wait'),
+    ],
+  });
+  const run = readRun(dir, []);
+  assert.deepEqual(run.api, {
+    calls: {
+      'OrderController.getOrder': { ok: 2, slow: 1 },
+      'GET /orders/:orderNumber': { error: 1, ok: 1 },
+      'POST /carts/:id/items': { ok: 1 },
+    },
+    variants: { 'OrderController.getOrder': ['default', 'locked'] },
+    inventory: { 'OrderController.getOrder': ['default', 'locked'], 'OrderController.save': [], 'GET /orders/:orderNumber': [] },
+  });
+});
+
+test('readRun has no api for a spec without the api extractor', () => {
+  const dir = writeRun(tmp(), { id: 'r1', rows: [row(0, '/login', null)] });
+  assert.equal(readRun(dir, []).api, undefined);
 });

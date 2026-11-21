@@ -57,10 +57,39 @@ export interface InjectedFault {
   delayMs?: number;
 }
 
+/** How a mock call ended; see MockCall. */
+export type CallOutcome = 'ok' | 'error' | 'slow' | 'hang';
+
+/**
+ * One call the mock API answered (or didn't), for the report's API coverage.
+ * The mock layer pushes these onto window.__mockCalls; createFaultInjector
+ * does it for every request it sees, keyed `METHOD /path`.
+ */
+export interface MockCall {
+  /** What identifies the endpoint: `GET /orders/:id`, `OrderController.getOrder`. */
+  key: string;
+  /** The named response the mock answered with (`empty`, `locked`), if it has them. */
+  variant?: string;
+  outcome: CallOutcome;
+  /** `Date.now()` when the call was made. */
+  at: number;
+}
+
+/** An endpoint the mock API has, so the report can show the ones never called. */
+export interface MockEndpoint {
+  key: string;
+  /** Its named responses; `[]` if it has one. */
+  variants: string[];
+}
+
 declare global {
   interface Window {
     /** Every fault the injector has answered with since the page loaded. */
     __mockFaults?: InjectedFault[];
+    /** Every call the mock API saw since the page loaded. */
+    __mockCalls?: MockCall[];
+    /** The mock API's endpoints. */
+    __mockEndpoints?: MockEndpoint[];
   }
 }
 
@@ -99,13 +128,23 @@ export const FAULTS: Fault[] = [
   { status: 'TIMEOUT_ERROR', error: `AbortError: signal timed out (${INJECTED_MARKER})` },
 ];
 
-/** `(method, path)` → the fault to answer with, or undefined to let it through. */
+/**
+ * `(method, path)` → the fault to answer with, or undefined to let it through.
+ * Each request goes onto window.__mockCalls as `METHOD /path`, `'error'` if
+ * it faulted it, else `'ok'` (spared ones too: the app did call them).
+ */
 export const createFaultInjector = ({ rate, seed, spare = [/^\/mock\//], isWrite }: FaultConfig) => {
   const random = prng(seed);
+  const call = (method: string, path: string, outcome: CallOutcome) => {
+    if (typeof window !== 'undefined') (window.__mockCalls ??= []).push({ key: `${method.toUpperCase()} ${path}`, outcome, at: Date.now() });
+  };
   return (method: string, path: string): Fault | undefined => {
-    if (spare.some((re) => re.test(path))) return undefined;
-    if (random() >= rate) return undefined;
+    if (spare.some((re) => re.test(path)) || random() >= rate) {
+      call(method, path, 'ok');
+      return undefined;
+    }
     const fault = FAULTS[Math.floor(random() * FAULTS.length)]!;
+    call(method, path, 'error');
     if (typeof window !== 'undefined') {
       const logged: InjectedFault = { method: method.toUpperCase(), path, status: fault.status, at: Date.now() };
       if (isWrite) logged.write = isWrite(method, path);

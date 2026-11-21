@@ -1,5 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
+import type { CallOutcome } from '../app/faults.ts';
 import { describeAction, detailKey, detailText, findingId, routeTemplate, type Snapshot } from './findings.ts';
 
 /** What scripts/bombadil.sh writes next to each run's trace. */
@@ -46,6 +47,16 @@ export interface RunFinding {
   frames: string[];
 }
 
+/** Which mock API endpoints were called, and how the calls ended (the spec's `api` extractor). */
+export interface ApiCoverage {
+  /** Per endpoint key, calls per outcome. */
+  calls: Record<string, Partial<Record<CallOutcome, number>>>;
+  /** Per endpoint key, the named responses it answered with, sorted. */
+  variants: Record<string, string[]>;
+  /** The mock's endpoints (window.__mockEndpoints) and their variants, called or not. */
+  inventory: Record<string, string[]>;
+}
+
 export interface RunResult {
   /** `<project>/<run dir name>`, unique across the runs root. */
   id: string;
@@ -56,6 +67,8 @@ export interface RunResult {
   routes: Record<string, number>;
   /** Repo-relative source files the run rendered, sorted (the spec's `rendered` extractor). */
   rendered: string[];
+  /** Absent when the spec doesn't export the `api` extractor. */
+  api?: ApiCoverage;
   findings: RunFinding[];
 }
 
@@ -85,6 +98,45 @@ const snapshotsIn = (node: unknown, out: Snapshot[] = []): Snapshot[] => {
   return out;
 };
 
+/**
+ * The endpoint a call key belongs to. `METHOD /path` keys (createFaultInjector's)
+ * carry the concrete path: matched against the inventory's templates for that
+ * method, else with ids blurred, as routes are. Other keys are kept as they are.
+ */
+export const endpointKey = (key: string, inventory: readonly string[]): string => {
+  const m = /^([A-Z]+) (\/\S*)$/.exec(key);
+  if (!m || inventory.includes(key)) return key;
+  const [, method, path] = m;
+  const templates = inventory.filter((k) => k.startsWith(`${method} /`)).map((k) => k.slice(method!.length + 1));
+  return `${method} ${routeTemplate(path!.split('?')[0]!, templates)}`;
+};
+
+type ApiSnap = { calls?: { key: string; variant?: string; outcome: CallOutcome }[]; inventory?: { key: string; variants?: string[] }[] };
+
+const readApi = (snaps: ApiSnap[]): ApiCoverage | undefined => {
+  if (snaps.length === 0) return undefined;
+  const inventory: Record<string, Set<string>> = {};
+  for (const s of snaps) {
+    for (const e of s.inventory ?? []) {
+      const known = (inventory[e.key] ??= new Set());
+      for (const v of e.variants ?? []) known.add(v);
+    }
+  }
+  const known = Object.keys(inventory);
+  const calls: ApiCoverage['calls'] = {};
+  const variants: Record<string, Set<string>> = {};
+  for (const s of snaps) {
+    for (const c of s.calls ?? []) {
+      const key = endpointKey(c.key, known);
+      const outcomes = (calls[key] ??= {});
+      outcomes[c.outcome] = (outcomes[c.outcome] ?? 0) + 1;
+      if (c.variant !== undefined) (variants[key] ??= new Set()).add(c.variant);
+    }
+  }
+  const sorted = (r: Record<string, Set<string>>) => Object.fromEntries(Object.entries(r).map(([k, v]) => [k, [...v].sort()]));
+  return { calls, variants: sorted(variants), inventory: sorted(inventory) };
+};
+
 const STEPS = 8;
 const FRAMES = 3;
 
@@ -97,6 +149,7 @@ export const readRun = (dir: string, knownRoutes: readonly string[]): RunResult 
 
   const routes: Record<string, number> = {};
   const rendered = new Set<string>();
+  const api: ApiSnap[] = [];
   const byId = new Map<string, RunFinding>();
   const frame = (r: TraceRow): string | undefined => {
     const name = r.state.screenshot ? basename(r.state.screenshot) : undefined;
@@ -108,6 +161,7 @@ export const readRun = (dir: string, knownRoutes: readonly string[]): RunResult 
     const route = routeTemplate(r.state.url, knownRoutes);
     routes[route] = (routes[route] ?? 0) + 1;
     for (const snap of r.snapshots ?? []) {
+      if (snap.name === 'api' && snap.value && typeof snap.value === 'object') api.push(snap.value as ApiSnap);
       if (snap.name !== 'rendered') continue;
       for (const file of (snap.value as { fresh?: string[] } | null)?.fresh ?? []) rendered.add(file);
     }
@@ -146,6 +200,7 @@ export const readRun = (dir: string, knownRoutes: readonly string[]): RunResult 
     actions: rows.filter((r) => r.action !== null).length,
     routes,
     rendered: [...rendered].sort(),
+    ...(api.length ? { api: readApi(api)! } : {}),
     findings: [...byId.values()],
   };
 };

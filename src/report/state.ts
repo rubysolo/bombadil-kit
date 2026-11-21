@@ -1,4 +1,4 @@
-import type { RunFinding, RunResult } from './runs.ts';
+import type { ApiCoverage, RunFinding, RunResult } from './runs.ts';
 
 /**
  * state.json: the history that turns one run's violations into cases with a
@@ -67,7 +67,23 @@ export interface State {
   findings: Record<string, FindingRecord>;
   /** Per project, per flow: every source file any of its runs rendered. */
   coverage: Record<string, Record<string, string[]>>;
+  /** Per project, per flow: the mock API calls its runs made (absent in state from before it, and for specs without `api`). */
+  api?: Record<string, Record<string, ApiCoverage>>;
 }
+
+const union = (a: string[] = [], b: string[] = []) => [...new Set([...a, ...b])].sort();
+
+/** `into` plus `run`'s calls, variants and inventory. */
+export const mergeApi = (into: ApiCoverage | undefined, run: ApiCoverage): ApiCoverage => {
+  const out: ApiCoverage = structuredClone(into ?? { calls: {}, variants: {}, inventory: {} });
+  for (const [key, outcomes] of Object.entries(run.calls)) {
+    const mine = (out.calls[key] ??= {});
+    for (const [o, n] of Object.entries(outcomes) as [keyof typeof outcomes, number][]) mine[o] = (mine[o] ?? 0) + n;
+  }
+  for (const [key, v] of Object.entries(run.variants)) out.variants[key] = union(out.variants[key], v);
+  for (const [key, v] of Object.entries(run.inventory)) out.inventory[key] = union(out.inventory[key], v);
+  return out;
+};
 
 export const emptyState = (): State => ({ schema: 'bombadil-state/v1', sweeps: [], runs: {}, findings: {}, coverage: {} });
 
@@ -80,6 +96,7 @@ export const applySweep = (state: State, runs: readonly RunResult[], at: string)
   const projects: Record<string, SweepProject> = {};
   const findings: Record<string, FindingRecord> = structuredClone(state.findings);
   const coverage: State['coverage'] = structuredClone(state.coverage ?? {});
+  const api: NonNullable<State['api']> = structuredClone(state.api ?? {});
 
   for (const run of fresh) {
     const p = (projects[run.meta.project] ??= { runs: [], actions: 0, routes: {} });
@@ -88,7 +105,11 @@ export const applySweep = (state: State, runs: readonly RunResult[], at: string)
     for (const [route, n] of Object.entries(run.routes)) p.routes[route] = (p.routes[route] ?? 0) + n;
     const flows = (coverage[run.meta.project] ??= {});
     const flow = run.meta.flow ?? 'explore';
-    flows[flow] = [...new Set([...(flows[flow] ?? []), ...(run.rendered ?? [])])].sort();
+    flows[flow] = union(flows[flow], run.rendered);
+    if (run.api) {
+      const calls = (api[run.meta.project] ??= {});
+      calls[flow] = mergeApi(calls[flow], run.api);
+    }
 
     for (const f of run.findings) {
       const { id: fid, project, property, route, detail, ...rest } = f;
@@ -120,6 +141,7 @@ export const applySweep = (state: State, runs: readonly RunResult[], at: string)
     },
     findings,
     coverage,
+    ...(Object.keys(api).length ? { api } : {}),
   };
 };
 

@@ -1,7 +1,8 @@
 import type { ProjectInfo } from './project.ts';
 import type { Snapshot } from './findings.ts';
-import type { Step } from './runs.ts';
-import { statusOf, type FindingRecord, type RunInfo, type State, type Status } from './state.ts';
+import type { ApiCoverage, Step } from './runs.ts';
+import type { CallOutcome } from '../app/faults.ts';
+import { mergeApi, statusOf, type FindingRecord, type RunInfo, type State, type Status } from './state.ts';
 
 /**
  * report.json (schema bombadil-report/v1): the view of state.json that the
@@ -35,6 +36,18 @@ export interface ReportFinding {
   snapshots: Snapshot[];
 }
 
+export interface ReportEndpoint {
+  key: string;
+  /** Flows whose runs called it, sorted. */
+  flows: string[];
+  /** Calls per outcome, every sweep so far. */
+  outcomes: Partial<Record<CallOutcome, number>>;
+  variantsSeen: string[];
+  variantsKnown: string[];
+  /** In the mock's inventory (window.__mockEndpoints); false for one only seen called. */
+  known: boolean;
+}
+
 export interface ReportProject {
   name: string;
   spec: string;
@@ -43,6 +56,11 @@ export interface ReportProject {
   actions: number;
   properties: { name: string; open: string[] }[];
   routes: { template: string; states: number; known: boolean }[];
+  /**
+   * Mock API endpoints called, per the spec's `api` extractor: absent if no
+   * run of the project had it. `reached` of the `known` inventory endpoints.
+   */
+  api?: { endpoints: ReportEndpoint[]; reached: number; known: number };
   runs: { id: string; seed: number; actions: number; exit_code: number; started_at: string; command: string }[];
   history: { sweep: number; at: string; findings: number; actions: number }[];
 }
@@ -63,6 +81,24 @@ export interface BuildOptions {
   /** Where runs live, relative to the repo root (for the inspect command). */
   runsDir?: string;
 }
+
+/** A project's API coverage, every flow folded together; undefined without any. */
+export const apiCoverage = (flows: Record<string, ApiCoverage> | undefined): ReportProject['api'] => {
+  const entries = Object.entries(flows ?? {});
+  if (entries.length === 0) return undefined;
+  const all = entries.reduce<ApiCoverage | undefined>((acc, [, a]) => mergeApi(acc, a), undefined)!;
+  const known = Object.keys(all.inventory).sort();
+  const extra = Object.keys(all.calls).filter((k) => !(k in all.inventory)).sort();
+  const endpoints = [...known, ...extra].map((key) => ({
+    key,
+    flows: entries.filter(([, a]) => key in a.calls).map(([flow]) => flow).sort(),
+    outcomes: all.calls[key] ?? {},
+    variantsSeen: all.variants[key] ?? [],
+    variantsKnown: all.inventory[key] ?? [],
+    known: key in all.inventory,
+  }));
+  return { endpoints, reached: known.filter((k) => k in all.calls).length, known: known.length };
+};
 
 const ORDER: Record<Status, number> = { new: 0, open: 1, quiet: 2, closed: 3 };
 
@@ -123,6 +159,7 @@ export const buildReport = (state: State, info: Record<string, ProjectInfo>, opt
       return { id, seed: r?.seed ?? 0, actions: r?.actions ?? 0, exit_code: r?.exit_code ?? 0, started_at: r?.started_at ?? '', command: r?.command ?? '' };
     });
     const firstRun = runInfo(sp.runs[0] ?? '');
+    const api = apiCoverage(state.api?.[name]);
 
     return {
       name,
@@ -135,6 +172,7 @@ export const buildReport = (state: State, info: Record<string, ProjectInfo>, opt
         ...pi.routes.map((t) => ({ template: t, states: sp.routes[t] ?? 0, known: true })),
         ...extraRoutes.map(([t, states]) => ({ template: t, states, known: false })),
       ],
+      ...(api ? { api } : {}),
       runs,
       history: sweeps.map((s) => ({
         sweep: s.id,

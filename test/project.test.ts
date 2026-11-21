@@ -40,3 +40,8 @@ test("a spec's properties include those it re-exports with export *", async () =
   );
   assert.deepEqual(specFileProperties(join(dir, 'spec.ts')), ['noUncaughtExceptions', 'noErrorBoundary']);
 });
+
+test('apiCalls, called and not exported, is not listed as a property', () => {
+  const spec = "import { apiCalls, spinnersClear } from 'bombadil-kit/spec';\napiCalls();\nexport const spins = spinnersClear();\n";
+  assert.deepEqual(specProperties(spec), ['spins']);
+});

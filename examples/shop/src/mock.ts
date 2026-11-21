@@ -1,6 +1,7 @@
 // The mock API: seeded data in memory, answered by an RTK Query baseQuery.
 import { faker } from '@faker-js/faker';
 import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query';
+import type { MockEndpoint } from 'bombadil-kit/faults';
 import { seedFaker } from 'bombadil-kit/faker';
 
 // Seeded before any data is built, so a seed replays the same shop.
@@ -79,6 +80,14 @@ const answer = (method: string, path: string, body: Record<string, unknown>) => 
   }
   return notFound;
 };
+
+// The endpoints answer() has, for the report's API coverage: ones no flow
+// calls show there as never called. Keys are what withFaults logs, METHOD /path.
+if (typeof window !== 'undefined') {
+  window.__mockEndpoints = ['GET /products', 'GET /products/:id', 'GET /cart', 'POST /cart/items', 'DELETE /cart/:id', 'POST /orders', 'GET /orders/:id'].map(
+    (key): MockEndpoint => ({ key, variants: [] }),
+  );
+}
 
 export const mockBaseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQueryError> = async (args) => {
   const { url, method = 'GET', body = {} } = typeof args === 'string' ? { url: args } : args;

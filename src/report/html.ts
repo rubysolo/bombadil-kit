@@ -99,6 +99,7 @@ td.cell{text-align:center}
 .route.bad{border-color:var(--m);background:rgba(255,43,214,.16);box-shadow:0 0 14px rgba(255,43,214,.4);color:var(--white)}
 .route.none{border:1px dashed #2F4656;box-shadow:none;color:var(--dim)}
 .route small{font-size:11px;opacity:.85}
+.head.api{border-top:1px solid var(--line2)}tr.endpoint.none td{color:var(--dim);opacity:.6}tr.endpoint b{font-weight:600;overflow-wrap:anywhere}
 .chart{display:flex;align-items:flex-end;gap:12px;height:170px;padding:16px 16px 6px;border-bottom:1px solid var(--line2)}
 .chart div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:6px;height:100%;min-width:0}
 .chart i{display:block;width:100%;max-width:46px;background:rgba(0,229,255,.55);box-shadow:0 0 10px rgba(0,229,255,.4)}
@@ -213,6 +214,26 @@ function repo() {
     '<footer class="foot"><span><span class="g">$</span> jq -c \'select(.status=="open" or .status=="new")\' findings.ndjson</span><span>report.json · findings.ndjson · state.json · generated ' + esc(when(R.generated_at)) + '</span></footer>';
 }
 
+// The mock API endpoints a project's flows called (report.json's api), or nothing without that data.
+const OUTCOME = { ok: 'g', error: 'm', slow: 'c', hang: 'w' };
+function apiSection(api) {
+  if (!api) return '';
+  const head = '<div class="head api"><h2>API coverage</h2><span class="dim" style="font-size:12px">' +
+    (api.known ? api.reached + '/' + api.known + ' endpoints reached' : api.endpoints.length + ' endpoints called') + '</span></div>';
+  const rows = api.endpoints.map((e) => {
+    // Always in this order, however the calls came in.
+    const calls = Object.keys(OUTCOME).filter((o) => e.outcomes[o]).map((o) => [o, e.outcomes[o]]).map(([o, n]) => '<span class="' + (OUTCOME[o] || '') + '">' + n.toLocaleString('en-US') + ' ' + esc(o) + '</span>').join(' · ');
+    const variants = e.variantsKnown.length || e.variantsSeen.length
+      ? e.variantsKnown.concat(e.variantsSeen.filter((v) => !e.variantsKnown.includes(v))).map((v) => '<span class="' + (e.variantsSeen.includes(v) ? 'w' : 'dim') + '">' + esc(v) + '</span>').join(' ') +
+        (e.variantsKnown.length ? ' <span class="dim">' + e.variantsSeen.filter((v) => e.variantsKnown.includes(v)).length + '/' + e.variantsKnown.length + '</span>' : '')
+      : '';
+    return '<tr class="endpoint' + (calls ? '' : ' none') + '"><td><b>' + esc(e.key) + '</b>' + (e.known ? '' : ' <small class="dim">not in the inventory</small>') + '</td>' +
+      '<td>' + (calls || 'never called') + '</td><td>' + variants + '</td><td class="dim">' + esc(e.flows.join(', ')) + '</td></tr>';
+  }).join('');
+  return head + '<div class="scroll"><table><thead><tr><th>ENDPOINT</th><th>CALLS</th><th>VARIANTS SEEN</th><th>FLOWS</th></tr></thead><tbody>' + rows + '</tbody></table></div>' +
+    '<div class="empty">Dimmed endpoints were never called: no flow reached the page that calls them. The inventory is window.__mockEndpoints.</div>';
+}
+
 function project(name, tab) {
   const p = byProject(name);
   if (!p) return header(home, '') + '<div class="panel pad">No project ' + esc(name) + '</div>';
@@ -230,10 +251,13 @@ function project(name, tab) {
           '<span>' + squares(f) + '</span></a>').join('') + '</div>'
       : '<div class="empty">No findings. Every property held on every route it reached.</div>';
   } else if (tab === 'coverage') {
-    body = '<div class="routes">' + p.routes.map((r) =>
+    const reached = p.routes.filter((r) => r.states > 0).length;
+    body = '<div class="head"><h2>Routes</h2><span class="dim" style="font-size:12px">' + reached + '/' + p.routes.length + ' routes reached</span></div>' +
+      '<div class="routes">' + p.routes.map((r) =>
       '<div class="route' + (openRoutes.has(r.template) ? ' bad' : r.states === 0 ? ' none' : '') + '"><b title="' + esc(r.template) + '">' + routeLabel(r.template) + '</b><small>' +
       (r.states ? r.states.toLocaleString('en-US') + ' states' : 'never reached') + (r.known ? '' : ' · not in routes.json') + '</small></div>').join('') + '</div>' +
-      '<div class="empty">Dashed routes were never reached: give the fuzzer a fixture or a start URL for them. Routes come from routes.json beside the spec.</div>';
+      '<div class="empty">Dashed routes were never reached: give the fuzzer a fixture or a start URL for them. Routes come from routes.json beside the spec.</div>' +
+      apiSection(p.api);
   } else {
     const max = Math.max(1, ...p.history.map((h) => h.findings));
     body = '<div class="chart">' + p.history.map((h, i) =>
