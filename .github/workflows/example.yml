@@ -66,7 +66,7 @@ jobs:
         run: npm run typecheck --prefix examples/shop
       - name: sweep and check the report
         working-directory: examples/shop
-        run: node check.mjs ${{ matrix.case == 'clean' && '' || matrix.case }}
+        run: node check.mjs ${{ matrix.case }}
       - if: failure()
         uses: actions/upload-artifact@v7
         with:

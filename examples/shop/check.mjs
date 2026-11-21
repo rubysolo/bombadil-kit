@@ -1,6 +1,6 @@
 // Runs a sweep of the example shop and checks its report.
 //
-//   node check.mjs           the app as it is: the sweep must find nothing
+//   node check.mjs [clean]   the app as it is: the sweep must find nothing
 //   node check.mjs leak      with VITE_PLANT=leak: plants.json's property must fire
 //   node check.mjs --all     clean, then every plant in turn
 //
@@ -60,7 +60,7 @@ const sweep = (plant) => {
 };
 
 const arg = process.argv[2];
-const todo = arg === '--all' ? [undefined, ...Object.keys(plants)] : [arg];
+const todo = arg === '--all' ? [undefined, ...Object.keys(plants)] : [arg === 'clean' ? undefined : arg];
 const failed = todo.filter((plant) => !sweep(plant));
 if (failed.length) {
   console.error(`\nfailed: ${failed.map((p) => p ?? 'clean').join(', ')}`);
