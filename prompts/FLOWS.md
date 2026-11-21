@@ -56,6 +56,11 @@ After a sweep, in `report.json` per project:
   a fence to widen.
 - `coverage.json`: the source files each flow rendered. A page you expected
   and don't see wasn't reached.
+- `milestones`: whether each flow *completed* its workflow, not just reached
+  its pages. Give each flow a milestone for its last step (the confirmation
+  shows, the saved values are on screen): `milestones({ … })` in the spec,
+  its names in the flow's `milestones`. One in `missed` is a flow that
+  reached the page and never finished there; see below.
 
 When a flow stalls on a step:
 

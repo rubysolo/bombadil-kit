@@ -237,6 +237,7 @@ export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
             exit_code: rc,
             time_limit: time,
             command: again,
+            ...(flow.milestones?.length ? { expected_milestones: flow.milestones } : {}),
           },
           null,
           2,

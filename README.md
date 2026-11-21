@@ -10,7 +10,7 @@ A kit for fuzzing a web app's UI with [Bombadil](https://github.com/antithesishq
   boundary, spinners clear, no leaked `undefined`/`NaN`, no sideways scroll,
   failed writes are shown, console errors only around injected faults, nothing
   drawn under a floating logo, the app renders (and which files it rendered);
-  form filling, `<select>` picking, forward-button weighting, header-free
+  flow milestones (did the workflow complete); form filling, `<select>` picking, forward-button weighting, header-free
   clicks, fences.
 - **`bombadil-kit run`**: starts the app's dev server once (mock API, seeded
   faults and data), runs Bombadil once per **flow**, writes each run's
@@ -146,8 +146,40 @@ a form. `flows.json` splits the app into workflows:
 - `signedIn`: start with `signedInCookie`. The app has to accept a session
   from a cookie in mock mode; see [prompts/INTEGRATE.md](prompts/INTEGRATE.md).
 - `spec`: which spec file runs it.
+- `milestones`: optional, the milestones it should reach (below).
 
 [prompts/FLOWS.md](prompts/FLOWS.md) is how to derive flows from an app.
+
+### Milestones
+
+A flow that reaches `/my-account` every run hasn't saved anything: a
+dispatched save isn't a completed one. A milestone says the workflow got
+done: a success banner shows and the fields hold the new values.
+
+```ts
+// in the spec, top level, not exported (like apiCalls)
+milestones({
+  saved: (doc) => !!doc.querySelector('[role="status"].saved') && doc.querySelector<HTMLInputElement>('#email')?.value !== '',
+});
+```
+
+```json
+{ "name": "account-save", "start": "/my-account", "allow": ["/my-account"], "milestones": ["saved"] }
+```
+
+- Each state, every predicate `(doc, win) => boolean` runs; one that throws
+  is false. The `milestones` snapshot gets the names that turned true:
+  edge-triggered per document, so a banner that stays up counts once, and
+  again only after it went away.
+- The report's milestones tab (`report.json`'s `projects[].milestones`), per
+  flow, as of the latest sweep it ran in: each expected milestone, times
+  reached, and a strip of the sweeps before; milestones reached but not
+  declared, apart.
+- An expected milestone that sweep never reached is highlighted (`missed`):
+  the flow got there and didn't finish. Improve the flow (fixtures, fence) or
+  its actions. It isn't a finding and doesn't fail `--fail-on`.
+- `flows.json`'s list only names what to expect; `run.json` keeps it
+  (`expected_milestones`), so the report needs no config.
 
 ## Specs
 
@@ -197,7 +229,8 @@ outlived a render cascade. noBlankPage is built from them; so can an app's own
 `apiCalls()` is not a property: call it once at the top level of the spec,
 unexported (Bombadil refuses an export that isn't a property or an action).
 It records the mock API calls each state saw, as the `api` snapshot, for the
-report's API coverage (below).
+report's API coverage (below). `milestones({ name: (doc, win) => boolean })`,
+the same way, records where a workflow got done ([Milestones](#milestones)).
 
 `failedWritesShown`, `consoleQuietUnlessFaulted` and `spinnersClear` read
 `window.__mockFaults`, which the app's fault injector fills (below).
@@ -271,7 +304,7 @@ same way and drowns everything else.
 |---|---|
 | `index.html` | people. Self-contained, opens from `file://`. Repo → project → finding. |
 | `findings.ndjson` | agents. One finding per line, `bombadil-report/v1`. |
-| `report.json` | agents and the page: summary, projects (property matrix, route coverage, API coverage, sweep history), findings. |
+| `report.json` | agents and the page: summary, projects (property matrix, route coverage, API coverage, milestones, sweep history), findings. |
 | `state.json` | the history every report is derived from. Keep it between runs. |
 | `coverage.json` | per flow, the source files it rendered (`bombadil-coverage/v1`). |
 | `evidence/<id>/` | the last screenshots before each finding's latest violation. |

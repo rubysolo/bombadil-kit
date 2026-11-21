@@ -11,6 +11,7 @@
     "about": "A product to an order confirmation: add to cart, check out.",
     "start": "/products/1",
     "allow": ["/products/*", "/cart", "/checkout", "/orders/*"],
-    "spec": "flow"
+    "spec": "flow",
+    "milestones": ["added", "ordered"]
   }
 ]

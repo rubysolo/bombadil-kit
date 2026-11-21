@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { describeAction, detailKey, detailText, findingId, routeTemplate } from '../src/report/findings.ts';
 import { readRun } from '../src/report/runs.ts';
-import { always, calling, rendering, row, timedOut, tmp, writeRun } from './helpers.ts';
+import { always, calling, reaching, rendering, row, timedOut, tmp, writeRun } from './helpers.ts';
 
 test('routeTemplate prefers a known route pattern', () => {
   const known = ['/orders/:orderNumber/prepare-store', '/login'];
@@ -153,4 +153,26 @@ test('readRun counts the mock API calls per endpoint and outcome, with the varia
 test('readRun has no api for a spec without the api extractor', () => {
   const dir = writeRun(tmp(), { id: 'r1', rows: [row(0, '/login', null)] });
   assert.equal(readRun(dir, []).api, undefined);
+});
+
+test('readRun counts the milestones reached, and reads the ones its flow expects from run.json', () => {
+  const dir = writeRun(tmp(), {
+    id: 'r1',
+    flow: 'account-save',
+    expected: ['saved', 'persisted'],
+    rows: [
+      reaching(row(0, '/my-account', null), []),
+      reaching(row(1, '/my-account', 'Click'), ['saved']),
+      reaching(row(2, '/my-account', 'Wait'), []),
+      reaching(row(3, '/my-account', 'Click'), ['saved', 'signedOut']),
+    ],
+  });
+  const run = readRun(dir, []);
+  assert.deepEqual(run.milestones, { saved: 2, signedOut: 1 });
+  assert.deepEqual(run.meta.expected_milestones, ['saved', 'persisted']);
+});
+
+test('readRun has no milestones for a spec without the extractor; one that reached none has {}', () => {
+  assert.equal(readRun(writeRun(tmp(), { id: 'r1', rows: [row(0, '/login', null)] }), []).milestones, undefined);
+  assert.deepEqual(readRun(writeRun(tmp(), { id: 'r1', rows: [reaching(row(0, '/login', null), [])] }), []).milestones, {});
 });

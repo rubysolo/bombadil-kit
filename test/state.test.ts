@@ -121,3 +121,36 @@ test('an older state.json without api still loads, and keeps api once it has som
   assert.deepEqual(s.api, { p: { explore: { calls: { k: { ok: 1 } }, variants: {}, inventory: {} } } });
   assert.deepEqual(applySweep(s, [run('b', { '/x': 1 }, [])], 't2').api, s.api);
 });
+
+test('milestones: per flow, the expected list from its latest run and per-sweep counts summed over its runs', () => {
+  const r = (id: string, flow: string, milestones?: Record<string, number>, expected?: string[]): RunResult => {
+    const base = run(id, { '/x': 1 }, []);
+    return { ...base, meta: { ...base.meta, flow, ...(expected ? { expected_milestones: expected } : {}) }, ...(milestones ? { milestones } : {}) };
+  };
+  let s = emptyState();
+  s = applySweep(s, [r('a', 'explore')], 't0');
+  assert.equal(s.milestones, undefined, 'neither expected nor recorded, no milestones field');
+  s = applySweep(s, [r('b', 'save', { saved: 1 }, ['saved', 'persisted']), r('c', 'save', { saved: 2, extra: 1 }, ['saved', 'persisted']), r('d', 'explore')], 't1');
+  // Declared but the spec doesn't record any: still tracked, so the report can say so.
+  s = applySweep(s, [r('e', 'save', undefined, ['saved'])], 't2');
+  assert.deepEqual(s.milestones, {
+    p: {
+      save: {
+        expected: ['saved'],
+        sweeps: [
+          { sweep: 2, runs: 2, recorded: true, reached: { saved: 3, extra: 1 } },
+          { sweep: 3, runs: 1, recorded: false, reached: {} },
+        ],
+      },
+    },
+  });
+});
+
+test('an older state.json without milestones still loads, and keeps them once it has some', () => {
+  const old = emptyState();
+  delete old.milestones;
+  const base = run('a', { '/x': 1 }, []);
+  const s = applySweep(old, [{ ...base, milestones: { saved: 1 } }], 't1');
+  assert.deepEqual(s.milestones, { p: { explore: { expected: [], sweeps: [{ sweep: 1, runs: 1, recorded: true, reached: { saved: 1 } }] } } });
+  assert.deepEqual(applySweep(s, [run('b', { '/x': 1 }, [])], 't2').milestones, s.milestones);
+});

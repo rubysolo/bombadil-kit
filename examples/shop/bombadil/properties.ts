@@ -6,6 +6,7 @@ import {
   consoleQuietUnlessFaulted,
   errorBoundaryNeverShown,
   failedWritesShown,
+  milestones,
   noBlankPage,
   noLeakedText,
   noSidewaysScroll,
@@ -28,6 +29,12 @@ export const appRenders = renders({ root: '#root' });
 // Not a property (so not exported: Bombadil would refuse it): which mock API
 // endpoints each flow called, for the report's API coverage.
 apiCalls();
+// Not a property either: where a workflow got done, per flow. flows.json says
+// which ones each flow expects; explore reaching them shows as undeclared.
+milestones({
+  added: (doc) => [...doc.querySelectorAll('main p')].some((p) => p.textContent?.startsWith('Added.')),
+  ordered: (doc) => /^Order \S+$/.test(doc.querySelector('main h1')?.textContent ?? '') && !!doc.querySelector('main p')?.textContent?.startsWith('Thanks,'),
+});
 // No lazy routes here, so nothing harmless to wait out: a clean sweep's
 // longest blank stretch is 0ms, and the walker leaves a blank cart in 100-550ms.
 export const noBlankPages = noBlankPage({ minMs: 50 });

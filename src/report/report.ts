@@ -2,7 +2,7 @@ import type { ProjectInfo } from './project.ts';
 import type { Snapshot } from './findings.ts';
 import type { ApiCoverage, Step } from './runs.ts';
 import type { CallOutcome } from '../app/faults.ts';
-import { mergeApi, statusOf, type FindingRecord, type RunInfo, type State, type Status } from './state.ts';
+import { mergeApi, statusOf, type FindingRecord, type FlowMilestones, type RunInfo, type State, type Status } from './state.ts';
 
 /**
  * report.json (schema bombadil-report/v1): the view of state.json that the
@@ -48,6 +48,22 @@ export interface ReportEndpoint {
   known: boolean;
 }
 
+/** One flow's milestones, as of the latest sweep it ran in. */
+export interface ReportFlowMilestones {
+  flow: string;
+  /** The flow's latest sweep, and the runs it had there. */
+  sweep: number;
+  runs: number;
+  /** Whether that sweep's spec recorded milestones (called `milestones()`). */
+  recorded: boolean;
+  /** flows.json's milestones for the flow: times reached in that sweep, and per sweep before it (oldest first, the last 20). */
+  expected: { name: string; reached: number; history: { sweep: number; reached: number }[] }[];
+  /** Expected milestones that sweep never reached: a flow or its actions to improve, not a finding. */
+  missed: string[];
+  /** Milestones that sweep reached that the flow doesn't declare. */
+  undeclared: { name: string; reached: number }[];
+}
+
 export interface ReportProject {
   name: string;
   spec: string;
@@ -61,6 +77,8 @@ export interface ReportProject {
    * run of the project had it. `reached` of the `known` inventory endpoints.
    */
   api?: { endpoints: ReportEndpoint[]; reached: number; known: number };
+  /** Per flow with milestones expected or recorded; absent when none has. */
+  milestones?: ReportFlowMilestones[];
   runs: { id: string; seed: number; actions: number; exit_code: number; started_at: string; command: string }[];
   history: { sweep: number; at: string; findings: number; actions: number }[];
 }
@@ -98,6 +116,35 @@ export const apiCoverage = (flows: Record<string, ApiCoverage> | undefined): Rep
     known: key in all.inventory,
   }));
   return { endpoints, reached: known.filter((k) => k in all.calls).length, known: known.length };
+};
+
+const HISTORY = 20;
+
+/** Each flow's milestones as of its latest sweep; undefined without any. */
+export const flowMilestones = (flows: Record<string, FlowMilestones> | undefined): ReportFlowMilestones[] | undefined => {
+  const out = Object.entries(flows ?? {}).flatMap(([flow, m]) => {
+    const last = m.sweeps.at(-1);
+    if (!last) return [];
+    const recent = m.sweeps.slice(-HISTORY);
+    const expected = m.expected.map((name) => ({
+      name,
+      reached: last.reached[name] ?? 0,
+      history: recent.map((s) => ({ sweep: s.sweep, reached: s.reached[name] ?? 0 })),
+    }));
+    return [{
+      flow,
+      sweep: last.sweep,
+      runs: last.runs,
+      recorded: last.recorded,
+      expected,
+      missed: expected.filter((e) => e.reached === 0).map((e) => e.name),
+      undeclared: Object.entries(last.reached)
+        .filter(([name]) => !m.expected.includes(name))
+        .sort(([a], [b]) => a.localeCompare(b))
+        .map(([name, reached]) => ({ name, reached })),
+    }];
+  });
+  return out.length ? out : undefined;
 };
 
 const ORDER: Record<Status, number> = { new: 0, open: 1, quiet: 2, closed: 3 };
@@ -160,6 +207,7 @@ export const buildReport = (state: State, info: Record<string, ProjectInfo>, opt
     });
     const firstRun = runInfo(sp.runs[0] ?? '');
     const api = apiCoverage(state.api?.[name]);
+    const milestones = flowMilestones(state.milestones?.[name]);
 
     return {
       name,
@@ -173,6 +221,7 @@ export const buildReport = (state: State, info: Record<string, ProjectInfo>, opt
         ...extraRoutes.map(([t, states]) => ({ template: t, states, known: false })),
       ],
       ...(api ? { api } : {}),
+      ...(milestones ? { milestones } : {}),
       runs,
       history: sweeps.map((s) => ({
         sweep: s.id,

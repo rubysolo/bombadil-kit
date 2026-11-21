@@ -18,6 +18,8 @@ export interface RunMeta {
   command?: string;
   /** The flow it ran (bombadil/flows.json); runs from before flows have none. */
   flow?: string;
+  /** The milestones its flow declares (flows.json `milestones`); absent when none. */
+  expected_milestones?: string[];
 }
 
 export interface Step {
@@ -69,6 +71,8 @@ export interface RunResult {
   rendered: string[];
   /** Absent when the spec doesn't export the `api` extractor. */
   api?: ApiCoverage;
+  /** Times each milestone was reached (the spec's `milestones` extractor); absent when the spec has none. */
+  milestones?: Record<string, number>;
   findings: RunFinding[];
 }
 
@@ -150,6 +154,7 @@ export const readRun = (dir: string, knownRoutes: readonly string[]): RunResult 
   const routes: Record<string, number> = {};
   const rendered = new Set<string>();
   const api: ApiSnap[] = [];
+  let milestones: Record<string, number> | undefined;
   const byId = new Map<string, RunFinding>();
   const frame = (r: TraceRow): string | undefined => {
     const name = r.state.screenshot ? basename(r.state.screenshot) : undefined;
@@ -162,6 +167,10 @@ export const readRun = (dir: string, knownRoutes: readonly string[]): RunResult 
     routes[route] = (routes[route] ?? 0) + 1;
     for (const snap of r.snapshots ?? []) {
       if (snap.name === 'api' && snap.value && typeof snap.value === 'object') api.push(snap.value as ApiSnap);
+      if (snap.name === 'milestones' && Array.isArray(snap.value)) {
+        milestones ??= {};
+        for (const name of snap.value) if (typeof name === 'string') milestones[name] = (milestones[name] ?? 0) + 1;
+      }
       if (snap.name !== 'rendered') continue;
       for (const file of (snap.value as { fresh?: string[] } | null)?.fresh ?? []) rendered.add(file);
     }
@@ -201,6 +210,7 @@ export const readRun = (dir: string, knownRoutes: readonly string[]): RunResult 
     routes,
     rendered: [...rendered].sort(),
     ...(api.length ? { api: readApi(api)! } : {}),
+    ...(milestones ? { milestones } : {}),
     findings: [...byId.values()],
   };
 };

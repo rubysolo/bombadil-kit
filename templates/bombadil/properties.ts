@@ -7,6 +7,7 @@ import {
   consoleQuietUnlessFaulted,
   errorBoundaryNeverShown,
   failedWritesShown,
+  milestones,
   noBlankPage,
   noLeakedText,
   noSidewaysScroll,
@@ -34,6 +35,12 @@ export const appRenders = renders({ root: '#root' });
 // Not a property (so not exported: Bombadil would refuse it): which mock API
 // endpoints each flow called, for the report's API coverage.
 apiCalls();
+// Not a property either: where a workflow got done (a success banner, the
+// new values on screen), not just where it went. flows.json's `milestones`
+// says which ones each flow should reach.
+milestones({
+  ordered: (doc) => !!doc.querySelector('[data-testid="order-confirmation"]'),
+});
 // A route left with only its header and footer, say after a failed request.
 // minMs: just above the longest `blank` stretch in a clean sweep's trace.
 export const noBlankPages = noBlankPage({ chrome: 'header, footer, nav', minMs: 250 });

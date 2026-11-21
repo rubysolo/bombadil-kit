@@ -25,6 +25,12 @@ export const calling = (r: Row, calls: { key: string; variant?: string; outcome:
   snapshots: [...r.snapshots, { index: 98, name: 'api', value: inventory ? { calls, inventory } : { calls }, time: 0 }],
 });
 
+/** A state whose `milestones` extractor reported these as reached. */
+export const reaching = (r: Row, names: string[]): Row => ({
+  ...r,
+  snapshots: [...r.snapshots, { index: 97, name: 'milestones', value: names, time: 0 }],
+});
+
 export const row = (i: number, url: string, action: unknown, violations: unknown[] = []): Row => ({
   timestamp: T0 + i * 1_000_000,
   action,
@@ -73,6 +79,8 @@ export interface RunSpec {
   rows: Row[];
   spec?: string;
   startedAt?: string;
+  /** run.json's expected_milestones. */
+  expected?: string[];
 }
 
 /** Writes a run directory (run.json, trace.jsonl, empty screenshots) and returns its path. */
@@ -99,6 +107,7 @@ export const writeRun = (root: string, run: RunSpec): string => {
       commit: 'abc1234',
       bombadil: '0.7.10',
       exit_code: 2,
+      ...(run.expected ? { expected_milestones: run.expected } : {}),
     }),
   );
   return dir;
