@@ -20,7 +20,18 @@
 #  - No token: the MR job downloads the nightly with CI_JOB_TOKEN.
 #  - If you split the two jobs (see the notes at the bottom), both need the
 #    same project, so the download can find the nightly's artifact.
+#
+# The report link on the merge request is `.report-link` at the bottom: a
+# hidden job, so it costs the default pipeline nothing. `expose_as` is a job
+# keyword GitLab rejects on a schedule pipeline, and the nightly and the
+# merge request are one job here, so it can't sit on `fuzz` itself. The
+# tradeoff: uncommenting `.report-link` and giving `fuzz` a stage before it
+# runs the same script a second time on a merge request, which is what
+# `expose_as` attaches to; leave it hidden if you'd rather have no link than
+# a second run.
 fuzz:
+  # The link to this run's report on the MR lives in `.report-link` at the
+  # bottom: `expose_as` can't be set here, since it also runs on a schedule.
   stage: test # adjust to your stages
   # Playwright's image has a Chromium and its libraries; Bombadil drives it.
   # Match the version to the repo's Playwright, if it has one.
@@ -171,3 +182,31 @@ fuzz:
     reports:
       # The summary above lands as a note on the merge request.
       markdown: report.md
+
+# The report, as a link on the merge request. Hidden, so it isn't a job until
+# you want it: `expose_as` is only allowed on a merge request pipeline, and
+# `fuzz` above also runs on a schedule, where GitLab rejects the keyword and
+# the whole pipeline fails to create. GitLab has no per-rule job keyword, so
+# the only way to have both is a second job that exists on merge requests
+# alone. Uncomment it and give `fuzz` a stage before `.report-link`'s, so
+# `needs` can find it. It re-runs the script (GitLab jobs don't share a
+# workspace, only artifacts); if that's too much for the link, keep it hidden
+# and point people at `fuzz`'s artifacts instead.
+#
+# .report-link:
+#   extends: fuzz
+#   stage: report # after fuzz's
+#   needs: ["fuzz"]
+#   rules:
+#     - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+#   script:
+#     - echo "report: $CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_SHA/browse?job=fuzz"
+#   environment:
+#     # The folder in the job's artifact browser, where index.html is; the URL
+#     # is what the MR's environment link opens, so it shows without
+#     # downloading the artifact.
+#     name: fuzz/$CI_MERGE_REQUEST_IID
+#     url: "$CI_PROJECT_URL/-/jobs/artifacts/$CI_COMMIT_SHA/browse?job=fuzz"
+#     action: prepare
+#   expose_as: 'Bombadil report'
+#   allow_failure: true

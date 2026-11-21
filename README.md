@@ -410,6 +410,8 @@ the report as the baseline; on a pull request, the affected flows (about 12
 minutes in all), `--baseline` the nightly's `state.json`, and fail on new
 findings.
 
+`templates/gitlab/fuzz.gitlab-ci.yml` is the same thing for GitLab CI.
+
 ## Develop
 
 ```bash
