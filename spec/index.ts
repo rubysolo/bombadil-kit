@@ -32,6 +32,7 @@ import {
   freshFailedWrite,
   unannouncedWrite,
   faultLine,
+  requestPattern,
   isErrorFault,
   isWriteFault,
   spinnerDeadline,
@@ -56,6 +57,7 @@ export {
   hasSettled,
   unannouncedWrite,
   faultLine,
+  requestPattern,
   isErrorFault,
   isWriteFault,
   spinnerDeadline,
@@ -171,6 +173,17 @@ export const noSidewaysScroll = (tolerance = 1) => {
   return always(() => overflow.current <= tolerance);
 };
 
+export interface FailedWritesOptions {
+  /** Writes that fail silently on purpose, as `/^METHOD \/path$/`. */
+  quiet?: RegExp[];
+  /** What tells the user: default `[role="alert"]`. */
+  errorSelector?: string;
+  /** Seconds the alert has to show within. Default 5. */
+  within?: number;
+  /** The endpoint, for the finding's id. Default requestPattern: record segments of the path as `:id`. */
+  request?: (method: string, path: string) => string;
+}
+
 /**
  * When the app's fault injector fails a write (`write: true`, or without it
  * anything but GET), the user is told on the page they're on when it fails:
@@ -185,7 +198,8 @@ export const failedWritesShown = ({
   quiet = [] as RegExp[],
   errorSelector = '[role="alert"]',
   within = 5,
-} = {}) => {
+  request = requestPattern,
+}: FailedWritesOptions = {}) => {
   const unannounced = extract((state) => {
     const win = state.window as FaultWindow;
     const alertShown = [...state.document.querySelectorAll(errorSelector)].some(
@@ -193,7 +207,11 @@ export const failedWritesShown = ({
     );
     // On the window, like __mockFaults: a page load starts both over.
     const watch = (win.__fuzzWrites ??= { pending: [], seen: new WeakSet() });
-    return unannouncedWrite(watch, win.__mockFaults ?? [], Date.now(), quiet, state.navigationHistory.current.id, alertShown, within * 1000);
+    const fault = unannouncedWrite(watch, win.__mockFaults ?? [], Date.now(), quiet, state.navigationHistory.current.id, alertShown, within * 1000);
+    // `request` first: the report names a finding, and builds its id, from
+    // the first string, so one endpoint's failures are one finding whatever
+    // the status or record. The full line is the evidence.
+    return fault ? { request: request(fault.method, fault.path), fault: faultLine(fault) } : null;
   });
   return always(() => unannounced.current === null);
 };

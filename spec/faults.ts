@@ -55,7 +55,7 @@ export const faultLine = (f: InjectedFault) => `${f.method} ${f.path} → ${Stri
  * `quiet`, an error) is owed an alert on the history entry the walker is on
  * when it's first seen: where the user is when the failure lands. An alert
  * there settles it. Leaving that entry first, or `within` ms passing, makes
- * it unannounced: returns its line, once. An alert on another page doesn't
+ * it unannounced: returns the fault, once. An alert on another page doesn't
  * count; that's how a write that fails silently hid behind an unrelated error.
  */
 export const unannouncedWrite = (
@@ -67,7 +67,7 @@ export const unannouncedWrite = (
   alertShown: boolean,
   within = 5000,
   fresh = 1500,
-): string | null => {
+): InjectedFault | null => {
   for (const f of faults) {
     if (watch.seen.has(f) || !isErrorFault(f) || !isWriteFault(f) || now - f.at >= fresh) continue;
     watch.seen.add(f);
@@ -77,8 +77,24 @@ export const unannouncedWrite = (
   const late = watch.pending.find((p) => p.entry !== entry || now - p.since > within);
   if (!late) return null;
   watch.pending = watch.pending.filter((p) => p !== late);
-  return faultLine(late.fault);
+  return late.fault;
 };
+
+/**
+ * A path segment that names a record rather than an endpoint: all digits, a
+ * longer one with digits in it (a UUID, `P12345`), or an upper-case slug
+ * (`TEST-BASIC-ORDER`).
+ */
+const isRecordSegment = (seg: string) =>
+  /^\d+$/.test(seg) || (seg.length >= 4 && /\d/.test(seg)) || /^[A-Z][A-Z0-9]*(?:[-_][A-Z0-9]+)+$/.test(seg);
+
+/**
+ * The endpoint a request hit, for a finding's id: `METHOD /path` with record
+ * segments as `:id`. One bug, one finding, whatever the status or the record:
+ * `POST /orders/TEST-BASIC-ORDER/design_requests` → `POST /orders/:id/design_requests`.
+ */
+export const requestPattern = (method: string, path: string) =>
+  `${method} ${path.split('/').map((seg) => (isRecordSegment(seg) ? ':id' : seg)).join('/')}`;
 
 /**
  * consoleQuietUnlessFaulted's excuse: a fault that may still be making the app
