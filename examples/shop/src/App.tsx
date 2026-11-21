@@ -4,6 +4,7 @@ import { Checkout } from './pages/Checkout.tsx';
 import { Order } from './pages/Order.tsx';
 import { Product } from './pages/Product.tsx';
 import { Products } from './pages/Products.tsx';
+import { Reviews } from './pages/Reviews.tsx';
 import { planted } from './plant.ts';
 import { Notices } from './notices.tsx';
 import { ErrorBoundary } from './ui.tsx';
@@ -28,6 +29,7 @@ export const App = () => (
         <Routes>
           <Route path="/" element={<Products />} />
           <Route path="/products/:id" element={<Product />} />
+          <Route path="/reviews/:id" element={<Reviews />} />
           <Route path="/cart" element={<Cart />} />
           <Route path="/checkout" element={<Checkout />} />
           <Route path="/orders/:id" element={<Order />} />

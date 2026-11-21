@@ -232,7 +232,7 @@ bundle declare `x` twice, and the spec won't load.
 | factory | holds when |
 |---|---|
 | `errorBoundaryNeverShown(selector)` | the error boundary's fallback never shows |
-| `spinnersClear({ selector, within, exclude })` | a visible loading indicator clears within 15s, added up across visits to its path until the path shows without one (a walker never stays 15s on a page; a stuck spinner shows on every visit), plus the `delayMs` of a slow fault still in flight; any hang since the page loaded excuses it. Spinners inside `exclude` (a selector: a modal meant to show 30s of progress) don't count |
+| `spinnersClear({ selector, within, share, exclude, key })` | no path shows a stuck spinner: per path, spinner time added up across visits (a walker never stays long on a page; a stuck spinner shows on every visit) until the path shows without one. Stuck: over `within` (15s) with no mock request in flight, and at least `share` (0.1) of its spinner time. A slow request the walker keeps abandoning isn't stuck however long the sweep. The in-flight count comes from `withFaults` or `startMockRequest`; without it every spinner second is idle and `within` alone decides, so keep it large. A slow fault still in flight adds its `delayMs`; any hang since the page loaded excuses it. Spinners inside `exclude` (a selector: a modal meant to show 30s of progress) don't count. In flight means any mock request: while an unrelated long one runs (polling, a slow fault elsewhere) a stuck spinner counts as busy, and that time is missed. `key` picks the tally a page adds to (default `loc.pathname`; `loc => loc.pathname + loc.search` for pages that route on the query string) |
 | `noLeakedText(pattern?)` | no `undefined`, `NaN`, `[object Object]`, `Invalid Date`, `null` in the text |
 | `noSidewaysScroll(tolerance?)` | the page never scrolls horizontally |
 | `failedWritesShown({ quiet, errorSelector, within, request })` | a write the fault injector failed shows a visible error on the page the user is on when it fails, within 5s and before they leave; an alert on another page doesn't count, and one alert per write will do (a retry or Dismiss may clear it). Slow and hung writes don't count. One finding per endpoint and page: the id is `request(method, path)`, by default the path with record segments as `:id` (`POST /orders/:id/design_requests`), not the status or the record |
@@ -288,8 +288,8 @@ if (import.meta.env.VITE_FUZZ === 'true') installFuzzConsole();
 
 | module | env | does |
 |---|---|---|
-| `bombadil-kit/rtk` | `VITE_MOCK_FAULT_RATE`, `_SEED` | `withFaults(baseQuery, env, { spare, isWrite, onFault })`: fails that share of requests as 500, 503, 422, network error or timeout, chosen by a seeded PRNG; returns `baseQuery` itself when off |
-| `bombadil-kit/faults` | same | `createFaultInjector({ rate, seed, spare, isWrite })`, for mock layers other than RTK Query; both log faults to `window.__mockFaults`, and every request (spared ones too) to `window.__mockCalls` as `METHOD /path`, `ok` or `error`. `INJECTED_MARKER`: the text every built-in fault carries |
+| `bombadil-kit/rtk` | `VITE_MOCK_FAULT_RATE`, `_SEED` | `withFaults(baseQuery, env, { spare, isWrite, onFault })`: fails that share of requests as 500, 503, 422, network error or timeout, chosen by a seeded PRNG, and counts every request in flight for `spinnersClear`. Returns `baseQuery` itself only when the variable is unset or empty: set to `0`, it fails nothing but still wraps |
+| `bombadil-kit/faults` | same | `createFaultInjector({ rate, seed, spare, isWrite })`, for mock layers other than RTK Query; both log faults to `window.__mockFaults`, and every request (spared ones too) to `window.__mockCalls` as `METHOD /path`, `ok` or `error`. `startMockRequest()` per mocked request, its result called when it answers or is abandoned: requests in flight, for `spinnersClear` (`withFaults` does it in fuzz mode). `INJECTED_MARKER`: the text every built-in fault carries |
 | `bombadil-kit/faker` | `VITE_MOCK_SEED`, `VITE_MOCK_REF_DATE` | seeds the app's faker and its reference date; `mockRandom`/`mockNow` for the rest of the mock layer |
 | `bombadil-kit/console` | `VITE_FUZZ` | each `console.error` becomes one string with the source lines that raised it (Bombadil records only the first argument) |
 
@@ -303,6 +303,8 @@ itself:
 | `write` | optional. Whether it changes data; overrides the `method !== 'GET'` guess. Transports without HTTP verbs set it; `isWrite(method, path)` on `withFaults`/`createFaultInjector` fills it |
 | `kind` | optional. `'error'` (the default): it failed. `'slow'`: it answered `delayMs` late. `'hang'`: it never answers; console errors are excused for `hangGrace` after `at`, not for the rest of the page, and spinners for the rest of it |
 | `delayMs` | optional, for `slow` |
+
+And per request, `const done = startMockRequest()` and `done()` when it answers, fails or is aborted: `window.__mockPending`. Without it, `spinnersClear` counts every second a spinner shows, and a slow request the walker keeps leaving looks stuck.
 
 For `consoleQuietUnlessFaulted({ injected })`, such a layer puts one marker
 in every failure it injects (`/Mock world injected failure/`), in the text the

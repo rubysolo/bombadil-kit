@@ -4,13 +4,15 @@
  *   import { withFaults } from 'bombadil-kit/rtk';
  *   const baseQuery = withFaults(mockBaseQuery, import.meta.env, { spare: [/^\/mock\//, /^\/translations/] });
  *
- * Wraps any baseQuery (a custom mock one, or fetchBaseQuery). Without
- * VITE_MOCK_FAULT_RATE in `env` it returns `baseQuery` itself, so it costs
- * nothing outside the fuzzer. Pass the app's `import.meta.env`: Vite only
+ * Wraps any baseQuery (a custom mock one, or fetchBaseQuery). In fuzz mode
+ * (VITE_MOCK_FAULT_RATE set, `0` included) it fails that share of requests
+ * and counts the rest in flight (startMockRequest), for spinnersClear.
+ * Without it, it returns `baseQuery` itself, so it costs nothing outside the
+ * fuzzer. Pass the app's `import.meta.env`: Vite only
  * fills that in in the app's own code, not in a dependency.
  */
 import type { BaseQueryApi, BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query';
-import { createFaultInjector, parseFaultConfig } from './faults.ts';
+import { createFaultInjector, parseFaultConfig, startMockRequest } from './faults.ts';
 
 export interface WithFaultsOptions {
   /** Paths never to fail. Default: /^\/mock\// (the mock's control API). */
@@ -39,17 +41,25 @@ export const withFaults = <BaseQuery extends AnyFaultableBaseQuery>(
   env: Record<string, unknown>,
   { spare, isWrite, onFault }: WithFaultsOptions = {},
 ): BaseQuery => {
-  const config = parseFaultConfig(env);
-  if (!config) return baseQuery;
+  // Fuzz mode: the runner always sets the rate, `0` included. Off it, nothing is wrapped.
+  if (env.VITE_MOCK_FAULT_RATE === undefined || env.VITE_MOCK_FAULT_RATE === '') return baseQuery;
+  // At rate 0 it fails nothing, but still logs every call (__mockCalls) for flow milestones.
+  const config = parseFaultConfig(env) ?? { rate: 0, seed: 1 };
   const inject = createFaultInjector({ ...config, ...(spare ? { spare } : {}), ...(isWrite ? { isWrite } : {}) });
-  const wrapped = (args: string | FetchArgs, api: BaseQueryApi, extraOptions: unknown) => {
+  const wrapped = async (args: string | FetchArgs, api: BaseQueryApi, extraOptions: unknown) => {
     const { method, path } = requestOf(args);
     const fault = inject(method, path) as FetchBaseQueryError | undefined;
     if (fault) {
       onFault?.(method, path, fault);
       return { error: fault };
     }
-    return baseQuery(args, api, extraOptions);
+    // In flight until it answers, for spinnersClear.
+    const done = startMockRequest();
+    try {
+      return await baseQuery(args, api, extraOptions);
+    } finally {
+      done();
+    }
   };
-  return wrapped as BaseQuery;
+  return wrapped as unknown as BaseQuery;
 };

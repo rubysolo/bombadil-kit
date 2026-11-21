@@ -2,6 +2,7 @@
 import { faker } from '@faker-js/faker';
 import type { BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import type { MockEndpoint } from 'bombadil-kit/faults';
+import { startMockRequest } from 'bombadil-kit/faults';
 import { seedFaker } from 'bombadil-kit/faker';
 
 // Seeded before any data is built, so a seed replays the same shop.
@@ -97,3 +98,33 @@ export const mockBaseQuery: BaseQueryFn<string | FetchArgs, unknown, FetchBaseQu
     | { data: unknown }
     | { error: FetchBaseQueryError };
 };
+
+export interface Review {
+  author: string;
+  text: string;
+}
+
+const reviewLatency = Number(import.meta.env.VITE_REVIEWS_LATENCY_MS ?? 400) || 0;
+const reviews = new Map<string, Review[]>(
+  products.map((p) => [p.id, Array.from({ length: 3 }, () => ({ author: faker.person.firstName(), text: faker.lorem.sentence() }))]),
+);
+
+/**
+ * Reviews the way many apps fetch: on mount, no cache, aborted on unmount.
+ * Its own latency (VITE_REVIEWS_LATENCY_MS, default 400ms), slower than the
+ * rest of the mock, so a walker often leaves before it answers.
+ */
+export const fetchReviews = (productId: string, signal: AbortSignal) =>
+  new Promise<Review[]>((resolve, reject) => {
+    // In flight until it answers or is abandoned: spinnersClear doesn't count that time.
+    const done = startMockRequest();
+    const timer = setTimeout(() => {
+      done();
+      resolve(structuredClone(reviews.get(productId) ?? []));
+    }, reviewLatency);
+    signal.addEventListener('abort', () => {
+      clearTimeout(timer);
+      done();
+      reject(new DOMException('Aborted', 'AbortError'));
+    });
+  });

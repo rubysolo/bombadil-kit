@@ -24,6 +24,7 @@ npx bombadil-kit run               # a plain sweep; report in tmp/bombadil/repor
 | `src/api.ts` | the API slice, its baseQuery wrapped in `withFaults` |
 | `src/main.tsx` | `installFuzzConsole` in fuzz mode |
 | `src/plant.ts` | `planted(name)`: on when `VITE_PLANT` lists it |
+| `src/pages/Reviews.tsx` | `/reviews/:id`, the `reviews` flow: fetched on mount, no cache, aborted on unmount, slower (`VITE_REVIEWS_LATENCY_MS`, 400ms), counted with `startMockRequest`. The walker rarely waits it out; `spinnersClear` mustn't call that stuck |
 | `bombadil/` | specs, every kit property (`properties.ts`), flows, routes |
 | `plants.json` | plant → the property that must catch it, the flow, `faults` and `time` if it needs them |
 
