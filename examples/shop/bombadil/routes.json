@@ -1,1 +1,1 @@
-["/", "/products/:id", "/cart", "/checkout", "/orders/:id"]
+["/", "/products/:id", "/reviews/:id", "/cart", "/checkout", "/orders/:id"]

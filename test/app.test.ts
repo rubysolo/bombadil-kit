@@ -4,7 +4,7 @@ import { faker } from '@faker-js/faker';
 import type { BaseQueryApi, BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import { appFrames, deepStack, formatConsoleArgs } from '../src/app/console.ts';
 import { seedFaker, parseMockSeed } from '../src/app/faker.ts';
-import { createFaultInjector, parseFaultConfig } from '../src/app/faults.ts';
+import { createFaultInjector, mockBusyMs, parseFaultConfig, startMockRequest } from '../src/app/faults.ts';
 import { withFaults } from '../src/app/rtk.ts';
 
 // ------------------------------------------------------------------ faults
@@ -196,3 +196,80 @@ test('deepStack sees past V8’s default 10 frames, and puts the limit back', ()
   assert.ok(frames.length > 30);
   assert.equal((Error as ErrorConstructor & { stackTraceLimit: number }).stackTraceLimit, 10);
 });
+
+// ---------------------------------------------------------------- in flight
+
+type BusyWindow = { __mockPending?: number; __mockBusyMs?: number; __mockBusySince?: number };
+const withWindow = async (fn: (w: BusyWindow) => Promise<void> | void) => {
+  const g = globalThis as { window?: BusyWindow };
+  g.window = {};
+  try {
+    await fn(g.window);
+  } finally {
+    delete g.window;
+  }
+};
+
+test('startMockRequest: counts a request on window.__mockPending until done, once', () =>
+  withWindow((w) => {
+    const a = startMockRequest();
+    const b = startMockRequest();
+    assert.equal(w.__mockPending, 2);
+    a();
+    a(); // settled and abandoned both call it: counted once
+    assert.equal(w.__mockPending, 1);
+    b();
+    assert.equal(w.__mockPending, 0);
+  }));
+
+test('mockBusyMs: the time anything was in flight, overlaps counted once', () =>
+  withWindow((w) => {
+    let now = 1000;
+    const clock = () => now;
+    assert.equal(mockBusyMs(clock), 0);
+    const a = startMockRequest(clock);
+    now = 1100;
+    const b = startMockRequest(clock);
+    now = 1150;
+    a();
+    assert.equal(mockBusyMs(clock), 150);
+    now = 1200;
+    b();
+    now = 5000;
+    assert.equal(mockBusyMs(clock), 200);
+    const c = startMockRequest(clock);
+    now = 5030;
+    assert.equal(mockBusyMs(clock), 230);
+    c();
+    assert.equal(w.__mockPending, 0);
+  }));
+
+test('startMockRequest: harmless outside a browser', () => {
+  assert.doesNotThrow(() => startMockRequest()());
+});
+
+test('withFaults: in fuzz mode, every request is pending until it answers, faults on or off', () =>
+  withWindow(async (w) => {
+    let answer!: () => void;
+    const slow: BaseQueryFn<string | FetchArgs, string, FetchBaseQueryError> = () =>
+      new Promise((resolve) => (answer = () => resolve({ data: 'ok' })));
+    for (const rate of ['0', '0.5']) {
+      const bq = withFaults(slow, { VITE_MOCK_FAULT_RATE: rate, VITE_MOCK_FAULT_SEED: '1' }, { spare: [/./] });
+      const res = bq('/orders', api, {});
+      assert.equal(w.__mockPending, 1, `rate ${rate}`);
+      answer();
+      await res;
+      assert.equal(w.__mockPending, 0, `rate ${rate}`);
+    }
+    // An injected fault answers at once: never left pending.
+    await withFaults(ok, { VITE_MOCK_FAULT_RATE: '1' })('/orders', api, {});
+    assert.equal(w.__mockPending, 0);
+  }));
+
+test('withFaults: at --faults 0 it fails nothing but still logs every call', () =>
+  withWindow(async (w) => {
+    const bq = withFaults(ok, { VITE_MOCK_FAULT_RATE: '0' });
+    for (let i = 0; i < 20; i++) assert.deepEqual(await bq('/orders', api, {}), { data: 'ok' });
+    const calls = (w as { __mockCalls?: unknown[] }).__mockCalls ?? [];
+    assert.equal(calls.length, 20);
+  }));

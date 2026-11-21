@@ -90,8 +90,43 @@ declare global {
     __mockCalls?: MockCall[];
     /** The mock API's endpoints. */
     __mockEndpoints?: MockEndpoint[];
+    /** Mocked requests in flight (startMockRequest). */
+    __mockPending?: number;
+    /** ms any mocked request was in flight, closed spans only; see mockBusyMs. */
+    __mockBusyMs?: number;
+    /** When __mockPending last went from 0 to 1. */
+    __mockBusySince?: number;
   }
 }
+
+/**
+ * Call when a mocked request starts; call what it returns when the request
+ * answers, fails or is abandoned (an abort on unmount). Keeps
+ * window.__mockPending and the time anything was in flight (mockBusyMs), so
+ * spinnersClear can tell a spinner waiting on a slow request from one stuck
+ * with nothing in flight. withFaults does this for RTK Query; a mock layer of
+ * the app's own calls it per request.
+ */
+export const startMockRequest = (clock: () => number = Date.now): (() => void) => {
+  if (typeof window === 'undefined') return () => {};
+  const pending = window.__mockPending ?? 0;
+  if (pending === 0) window.__mockBusySince = clock();
+  window.__mockPending = pending + 1;
+  let done = false;
+  return () => {
+    if (done) return;
+    done = true;
+    window.__mockPending = Math.max(0, (window.__mockPending ?? 1) - 1);
+    if (window.__mockPending === 0) window.__mockBusyMs = (window.__mockBusyMs ?? 0) + clock() - (window.__mockBusySince ?? clock());
+  };
+};
+
+/** ms any mocked request has been in flight since the page loaded, overlaps counted once (spinnersClear reads the same fields). */
+export const mockBusyMs = (clock: () => number = Date.now): number => {
+  if (typeof window === 'undefined') return 0;
+  const open = (window.__mockPending ?? 0) > 0 ? clock() - (window.__mockBusySince ?? clock()) : 0;
+  return (window.__mockBusyMs ?? 0) + open;
+};
 
 /** Reads VITE_MOCK_FAULT_RATE and VITE_MOCK_FAULT_SEED; pass `import.meta.env`. */
 export const parseFaultConfig = (env: Record<string, unknown>): FaultConfig | undefined => {

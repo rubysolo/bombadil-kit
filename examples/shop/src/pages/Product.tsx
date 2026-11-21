@@ -40,6 +40,9 @@ export const Product = () => {
       <h1>{data.name}</h1>
       <p>{data.description}</p>
       <p className="price">{price}</p>
+      <p>
+        <Link to={`/reviews/${data.id}`}>Reviews</Link>
+      </p>
       <button
         type="button"
         onClick={
