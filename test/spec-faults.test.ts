@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { consoleErrorExcused, unexcusedConsoleErrors, faultInFlight, freshFailedWrite, isWriteFault, newFailedWrite, type InjectedFault } from '../spec/faults.ts';
+import { consoleErrorExcused, unexcusedConsoleErrors, faultInFlight, freshFailedWrite, isWriteFault, unannouncedWrite, type InjectedFault, type WriteWatch } from '../spec/faults.ts';
 import { FAULTS, INJECTED_MARKER } from '../src/app/faults.ts';
 
 const t = 1_000_000;
@@ -123,26 +123,61 @@ test('unexcusedConsoleErrors: the args of each error not excused, so the report 
   assert.equal(unexcusedConsoleErrors(entries, [], t).length, 3);
 });
 
-test('newFailedWrite: each failed write triggers once, at the first state that sees it', () => {
-  const triggered = new Set<InjectedFault>();
+// unannouncedWrite: one watch per page load, states fed in order (`entry`: the history entry).
+const watch = (): WriteWatch => ({ pending: [], seen: new Set() });
+const line = 'POST /orders → 500';
+
+test('unannouncedWrite: an alert on the page the failure landed on settles it, once per write', () => {
   const f = fault();
-  assert.equal(newFailedWrite([f], t + 10, [], triggered), f);
-  // Later states inside its fresh window: already triggered. A retry that clears
-  // the alert, or the user dismissing it, must not demand a second one.
-  assert.equal(newFailedWrite([f], t + 40, [], triggered), undefined);
-  assert.equal(newFailedWrite([f], t + 1400, [], triggered), undefined);
-  const g = fault({ at: t + 1000, path: '/payments' });
-  assert.equal(newFailedWrite([f, g], t + 1100, [], triggered), g);
-  assert.equal(newFailedWrite([f, g], t + 1200, [], triggered), undefined);
+  // Shown in the same state: settled. A retry or Dismiss clearing it later changes nothing.
+  const w = watch();
+  assert.equal(unannouncedWrite(w, [f], t + 10, [], 1, true), null);
+  assert.equal(unannouncedWrite(w, [f], t + 40, [], 1, false), null);
+  assert.equal(unannouncedWrite(w, [f], t + 1400, [], 2, false), null);
+  // Shown a few states later, still on that page: settled.
+  const w2 = watch();
+  assert.equal(unannouncedWrite(w2, [f], t + 10, [], 1, false), null);
+  assert.equal(unannouncedWrite(w2, [f], t + 200, [], 1, true), null);
+  assert.equal(unannouncedWrite(w2, [f], t + 6000, [], 3, false), null);
 });
 
-test('newFailedWrite: two in one state trigger on consecutive states; stale, quiet and slow ones never', () => {
-  const triggered = new Set<InjectedFault>();
+test('unannouncedWrite: leaving the page before an alert shows there is unannounced, even if the next page has one', () => {
+  const w = watch();
+  assert.equal(unannouncedWrite(w, [fault()], t + 10, [], 1, false), null);
+  assert.equal(unannouncedWrite(w, [fault()], t + 40, [], 2, true), line);
+  // Reported once, not on every state after.
+  assert.equal(unannouncedWrite(w, [fault()], t + 80, [], 2, false), null);
+});
+
+test('unannouncedWrite: no alert within `within` ms on that page is unannounced', () => {
+  const w = watch();
+  assert.equal(unannouncedWrite(w, [fault()], t + 10, [], 1, false), null);
+  assert.equal(unannouncedWrite(w, [fault()], t + 4999, [], 1, false), null);
+  assert.equal(unannouncedWrite(w, [fault()], t + 5011, [], 1, false), line);
+  assert.equal(unannouncedWrite(watch(), [fault()], t + 10, [], 1, false, 100), null);
+});
+
+test('unannouncedWrite: the page is where the failure is first seen, so a notice there counts', () => {
+  // The walker moved on before the failure was logged: the next page owes the alert.
+  const w = watch();
+  assert.equal(unannouncedWrite(w, [], t, [], 1, false), null);
+  const late = fault({ at: t + 300 });
+  assert.equal(unannouncedWrite(w, [late], t + 310, [], 2, false), null);
+  assert.equal(unannouncedWrite(w, [late], t + 330, [], 2, true), null);
+});
+
+test('unannouncedWrite: only fresh, unquiet error writes; each one owes its own alert', () => {
+  assert.equal(unannouncedWrite(watch(), [fault()], t + 1500, [], 1, false), null);
+  const quiet = watch();
+  unannouncedWrite(quiet, [fault()], t + 10, [/^POST \/orders$/], 1, false);
+  assert.equal(unannouncedWrite(quiet, [fault()], t + 40, [/^POST \/orders$/], 2, false), null);
+  const slow = watch();
+  unannouncedWrite(slow, [fault({ kind: 'slow', delayMs: 10 }), fault({ method: 'GET' })], t + 10, [], 1, false);
+  assert.equal(unannouncedWrite(slow, [], t + 40, [], 2, false), null);
+  const two = watch();
   const a = fault({ path: '/a' });
-  const b = fault({ path: '/b' });
-  assert.equal(newFailedWrite([a, b], t + 10, [], triggered), a);
-  assert.equal(newFailedWrite([a, b], t + 40, [], triggered), b);
-  assert.equal(newFailedWrite([fault()], t + 1500, [], new Set()), undefined);
-  assert.equal(newFailedWrite([fault()], t + 10, [/^POST \/orders$/], new Set()), undefined);
-  assert.equal(newFailedWrite([fault({ kind: 'slow', delayMs: 10 })], t + 10, [], new Set()), undefined);
+  const b = fault({ path: '/b', at: t + 100 });
+  assert.equal(unannouncedWrite(two, [a], t + 10, [], 1, true), null);
+  assert.equal(unannouncedWrite(two, [a, b], t + 110, [], 1, false), null);
+  assert.equal(unannouncedWrite(two, [a, b], t + 140, [], 2, false), 'POST /b → 500');
 });
