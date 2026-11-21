@@ -4,6 +4,9 @@
 //   bombadil-kit run                         every flow, 1 minute each
 //   bombadil-kit run --flow checkout --time 3m --headed
 //   bombadil-kit run --seed 1234 --ref-date 2026-11-19     same mock data and faults as that run
+//   bombadil-kit run -- --exit-on-violation             hand the rest to Bombadil
+//   bombadil-kit run --reproduce tmp/bombadil/runs/web/<run>  replay that run
+//   bombadil-kit run --reuse-server                use a server already on the port
 //   bombadil-kit run --baseline main/state.json --no-sandbox   (CI)
 //   bombadil-kit list                        the flows
 //   bombadil-kit report [--fail-on new|open] [--baseline state.json]
@@ -12,8 +15,9 @@
 //
 // Reads bombadil-kit.json from here or above. See README.md.
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { loadConfig, pickProject, projectRoutes, readFlows, type Loaded, type ProjectConfig } from './config.ts';
 import { projectAffected } from './affected/project.ts';
@@ -29,9 +33,26 @@ const USAGE = (() => {
 
 const num = (v: string | undefined) => (v === undefined ? undefined : Number(v));
 
+/** Where Bombadil's arguments start: after `--`, or at the end of argv. */
+const sep = (argv: string[]): number => argv.indexOf('--');
+
+/** This tool's own arguments: what comes before `--`. */
+export const ownArgs = (argv: string[]): string[] => {
+  const i = sep(argv);
+  return i === -1 ? argv : argv.slice(0, i);
+};
+
+/** What Bombadil gets: everything after `--`, the separator itself aside. */
+export const tail = (argv: string[]): string[] => {
+  const i = sep(argv);
+  return i === -1 ? [] : argv.slice(i + 1);
+};
+
 const cmdRun = async (loaded: Loaded, argv: string[]) => {
   const { values } = parseArgs({
-    args: argv,
+    // parseArgs would call what follows the separator a positional and refuse
+    // it, so only this tool's own arguments are handed to it.
+    args: ownArgs(argv),
     options: {
       project: { type: 'string' },
       flow: { type: 'string', multiple: true, default: [] },
@@ -47,9 +68,15 @@ const cmdRun = async (loaded: Loaded, argv: string[]) => {
       width: { type: 'string' },
       height: { type: 'string' },
       port: { type: 'string' },
+      reproduce: { type: 'string' },
+      'reuse-server': { type: 'boolean', default: false },
     },
+    // Everything after `--` is Bombadil's: parseArgs stops at the separator, so
+    // the tail is read from argv, where `--` still stands (see tail()).
   });
-  const [project] = pickProject(loaded, values.project);
+  // A replay's project is the one its run.json names (see reproduce()); only a
+  // fresh run has to pick one, which several projects make --project's job.
+  const project = values.reproduce ? (values.project ?? '') : pickProject(loaded, values.project)[0];
   return run(loaded, {
     project,
     flows: values.flow,
@@ -65,6 +92,9 @@ const cmdRun = async (loaded: Loaded, argv: string[]) => {
     width: num(values.width),
     height: num(values.height),
     port: num(values.port),
+    bombadilArgs: tail(argv),
+    reproduce: values.reproduce,
+    reuseServer: values['reuse-server'],
   });
 };
 
@@ -176,21 +206,40 @@ const cmdAffected = async (loaded: Loaded, argv: string[]) => {
   return 0;
 };
 
-const [command, ...rest] = process.argv.slice(2);
-const commands: Record<string, (l: Loaded, a: string[]) => number | Promise<number>> = {
-  run: cmdRun,
-  list: cmdList,
-  report: cmdReport,
-  affected: cmdAffected,
+// The command line. Imported (by a test, or anything else), this file is only
+// its exports: main reads the real argv and exits the process.
+const main = async () => {
+  const [command, ...rest] = process.argv.slice(2);
+  const commands: Record<string, (l: Loaded, a: string[]) => number | Promise<number>> = {
+    run: cmdRun,
+    list: cmdList,
+    report: cmdReport,
+    affected: cmdAffected,
+  };
+
+  if (!command || command === '-h' || command === '--help' || !commands[command]) {
+    console.error(USAGE);
+    process.exit(command && !['-h', '--help'].includes(command) ? 2 : 0);
+  }
+  try {
+    process.exit(await commands[command]!(loadConfig(), rest));
+  } catch (err) {
+    console.error(`bombadil-kit ${command}: ${(err as Error).message}`);
+    process.exit(2);
+  }
 };
 
-if (!command || command === '-h' || command === '--help' || !commands[command]) {
-  console.error(USAGE);
-  process.exit(command && !['-h', '--help'].includes(command) ? 2 : 0);
-}
-try {
-  process.exit(await commands[command]!(loadConfig(), rest));
-} catch (err) {
-  console.error(`bombadil-kit ${command}: ${(err as Error).message}`);
-  process.exit(2);
-}
+// The entry-point test, not import.meta.main: that needs Node 24, and the kit
+// supports 22.18. argv[1] is what `node` was pointed at; the npm bin is a
+// symlink to this file, so resolve both sides before comparing. An importer's
+// argv[1] is the importer, so importing this file runs nothing.
+// A wrapper or loader can pass an argv[1] that isn't a file, and realpath
+// throws on it: then this isn't the entry point.
+const isEntry = () => {
+  try {
+    return !!process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+};
+if (isEntry()) await main();
