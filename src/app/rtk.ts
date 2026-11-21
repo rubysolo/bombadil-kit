@@ -29,15 +29,20 @@ const requestOf = (args: string | FetchArgs) => {
   return { method, path };
 };
 
-export const withFaults = <Args extends string | FetchArgs, Result, ExtraOptions, Meta>(
-  baseQuery: BaseQueryFn<Args, Result, FetchBaseQueryError, ExtraOptions, Meta>,
+// One type parameter for the whole baseQuery, returned as is: createApi infers
+// its BaseQuery from `baseQuery: withFaults(…)` inline. Spelled out as
+// BaseQueryFn<Args, Result, …> it can't, and every endpoint's error is unknown.
+type AnyFaultableBaseQuery = BaseQueryFn<any, any, FetchBaseQueryError, any, any>;
+
+export const withFaults = <BaseQuery extends AnyFaultableBaseQuery>(
+  baseQuery: BaseQuery,
   env: Record<string, unknown>,
   { spare, isWrite, onFault }: WithFaultsOptions = {},
-): BaseQueryFn<Args, Result, FetchBaseQueryError, ExtraOptions, Meta> => {
+): BaseQuery => {
   const config = parseFaultConfig(env);
   if (!config) return baseQuery;
   const inject = createFaultInjector({ ...config, ...(spare ? { spare } : {}), ...(isWrite ? { isWrite } : {}) });
-  return (args: Args, api: BaseQueryApi, extraOptions: ExtraOptions) => {
+  const wrapped = (args: string | FetchArgs, api: BaseQueryApi, extraOptions: unknown) => {
     const { method, path } = requestOf(args);
     const fault = inject(method, path) as FetchBaseQueryError | undefined;
     if (fault) {
@@ -46,4 +51,5 @@ export const withFaults = <Args extends string | FetchArgs, Result, ExtraOptions
     }
     return baseQuery(args, api, extraOptions);
   };
+  return wrapped as BaseQuery;
 };
