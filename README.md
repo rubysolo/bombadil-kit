@@ -410,7 +410,11 @@ the report as the baseline; on a pull request, the affected flows (about 12
 minutes in all), `--baseline` the nightly's `state.json`, and fail on new
 findings.
 
-`templates/gitlab/fuzz.gitlab-ci.yml` is the same thing for GitLab CI.
+`templates/gitlab/fuzz.gitlab-ci.yml` is the same thing for GitLab CI, over
+every project in `bombadil-kit.json` (a sweep each, one report): it finds the
+nightly with `CI_JOB_TOKEN`, links the report on the merge request
+(`expose_as`), and is `allow_failure`. Its test validates it against GitLab's
+published CI schema (`test/fixtures/gitlab-ci.schema.json`).
 
 ## Develop
 

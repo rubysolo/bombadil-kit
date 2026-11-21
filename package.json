@@ -73,6 +73,7 @@
     "@faker-js/faker": "^9",
     "@reduxjs/toolkit": "^2",
     "@types/node": "^24",
+    "ajv": "^8.20.0",
     "esbuild": "^0.25",
     "typescript": "^5.9",
     "yaml": "^2.9.1"
