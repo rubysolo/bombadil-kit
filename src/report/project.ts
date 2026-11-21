@@ -18,7 +18,7 @@ export const PROPERTY_FACTORIES = [
 export interface ProjectInfo {
   /** Properties the spec checks, in its export order. */
   properties: string[];
-  /** Route patterns the app has (`bombadil/routes.json` beside the spec), so unreached ones show. */
+  /** Route patterns the app has (the project's `routes`, else `routes.json` beside the spec), so unreached ones show. */
   routes: string[];
 }
 
@@ -65,10 +65,15 @@ export const specFileProperties = (file: string, seen = new Set<string>()): stri
   return [...new Set(names)];
 };
 
-/** Reads a project's spec (path relative to `repoRoot`) and the routes.json beside it. */
-export const projectInfo = (repoRoot: string, spec: string): ProjectInfo => {
+/**
+ * Reads a project's spec (path relative to `repoRoot`) and its routes: from
+ * `routes` (the config's `projects.<name>.routes`, relative to `repoRoot`)
+ * when given, else the routes.json beside the spec.
+ */
+export const projectInfo = (repoRoot: string, spec: string, routes?: string): ProjectInfo => {
   const specPath = join(repoRoot, spec);
-  const routesPath = join(dirname(specPath), 'routes.json');
+  const routesPath = routes ? join(repoRoot, routes) : join(dirname(specPath), 'routes.json');
+  if (routes && !existsSync(routesPath)) throw new Error(`no routes file at ${routes}`);
   return {
     properties: specFileProperties(specPath),
     routes: existsSync(routesPath) ? (JSON.parse(readFileSync(routesPath, 'utf8')) as string[]) : [],

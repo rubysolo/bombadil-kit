@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from 'node:fs';
-import { dirname, join, resolve } from 'node:path';
+import { dirname, join, relative, resolve } from 'node:path';
 
 /**
  * bombadil-kit.json, at the repo root. Paths are relative to the file.
@@ -54,6 +54,11 @@ export interface ProjectConfig {
   flows?: string;
   /** Where `<spec>.ts` files live. Default `<dir>/bombadil`. */
   specs?: string;
+  /**
+   * The app's route patterns, a JSON array (`["/orders/:id"]`). Default
+   * `routes.json` beside the spec; set it when projects share a specs folder.
+   */
+  routes?: string;
   /** The spec a flow without `spec` runs. Default `spec`. */
   spec?: string;
   /** The cookie a `signedIn` flow starts with, `NAME=VALUE`. */
@@ -116,6 +121,14 @@ export const loadConfig = (file = findConfig()): Loaded => {
   const root = dirname(resolve(file));
   return { root, config, out: join(root, config.out ?? 'tmp/bombadil') };
 };
+
+/** The repo-relative path of a project's `routes`, or undefined when it has none. */
+export const routesPath = (root: string, p: ProjectConfig): string | undefined =>
+  p.routes === undefined ? undefined : relative(root, resolve(root, p.routes));
+
+/** Per project, its `routes` (repo-relative), for generate(): projects without one are left out. */
+export const projectRoutes = ({ root, config }: Loaded): Record<string, string> =>
+  Object.fromEntries(Object.entries(config.projects).flatMap(([name, p]) => (p.routes ? [[name, routesPath(root, p)!]] : [])));
 
 /** The project named, or the only one. */
 export const pickProject = ({ config }: Loaded, name?: string): [string, ProjectConfig] => {

@@ -279,8 +279,8 @@ function project(name, tab) {
     body = '<div class="head"><h2>Routes</h2><span class="dim" style="font-size:12px">' + reached + '/' + p.routes.length + ' routes reached</span></div>' +
       '<div class="routes">' + p.routes.map((r) =>
       '<div class="route' + (openRoutes.has(r.template) ? ' bad' : r.states === 0 ? ' none' : '') + '"><b title="' + esc(r.template) + '">' + routeLabel(r.template) + '</b><small>' +
-      (r.states ? r.states.toLocaleString('en-US') + ' states' : 'never reached') + (r.known ? '' : ' · not in routes.json') + '</small></div>').join('') + '</div>' +
-      '<div class="empty">Dashed routes were never reached: give the fuzzer a fixture or a start URL for them. Routes come from routes.json beside the spec.</div>' +
+      (r.states ? r.states.toLocaleString('en-US') + ' states' : 'never reached') + (r.known ? '' : ' · not in the route list') + '</small></div>').join('') + '</div>' +
+      '<div class="empty">Dashed routes were never reached: give the fuzzer a fixture or a start URL for them. Routes come from routes.json beside the spec, or the <code>routes</code> config key.</div>' +
       apiSection(p.api);
   } else if (tab === 'milestones' && p.milestones) {
     body = milestonesSection(p.milestones);

@@ -11,6 +11,7 @@
 //   bombadil-kit list                        the flows
 //   bombadil-kit report [--fail-on new|open] [--baseline state.json]
 //   bombadil-kit affected [--base origin/main] [--files a.tsx,b.ts] [--coverage coverage.json] [--json]
+//   bombadil-kit affected --all              every project (the default with several): `<project> <flow>`
 //
 // Reads bombadil-kit.json from here or above. See README.md.
 import { execFileSync } from 'node:child_process';
@@ -18,8 +19,8 @@ import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
-import { flowsPath, loadConfig, pickProject, readFlows, specsDir, type Loaded } from './config.ts';
-import { affectedFlows, importersOf } from './affected/index.ts';
+import { loadConfig, pickProject, projectRoutes, readFlows, type Loaded, type ProjectConfig } from './config.ts';
+import { projectAffected } from './affected/project.ts';
 import { generate, type FailOn } from './report/generate.ts';
 import { run } from './runner/run.ts';
 
@@ -125,6 +126,7 @@ const cmdReport = (loaded: Loaded, argv: string[]) => {
     failOn,
     title: values.title,
     baseline: values.baseline && resolve(values.baseline),
+    routes: projectRoutes(loaded),
   });
   const s = report.summary;
   console.error(`sweep ${report.sweep.id}: ${s.new} new, ${s.open} open, ${s.quiet} quiet, ${s.closed} closed · ${s.routes[0]}/${s.routes[1]} routes`);
@@ -132,69 +134,75 @@ const cmdReport = (loaded: Loaded, argv: string[]) => {
   return exitCode;
 };
 
-const escape = (s: string) => s.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
-
-// stdout: one flow per line, for `run --flow`. stderr: why each was picked,
-// and app files no flow reaches. Without a coverage map every flow is picked.
+// stdout: one flow per line, for `run --flow`; with several projects,
+// `<project> <flow>`. stderr: why each was picked, and app files no flow
+// reaches. Without a coverage map every flow is picked.
 const cmdAffected = async (loaded: Loaded, argv: string[]) => {
   const { values } = parseArgs({
     args: argv,
     options: {
       project: { type: 'string' },
+      all: { type: 'boolean', default: false },
       base: { type: 'string', default: 'origin/main' },
       files: { type: 'string' },
       coverage: { type: 'string', default: join(loaded.out, 'report/coverage.json') },
       json: { type: 'boolean', default: false },
     },
   });
-  const { root } = loaded;
-  const [project, p] = pickProject(loaded, values.project);
+  const { root, config } = loaded;
+  if (values.all && values.project) throw new Error('--all and --project are exclusive');
+  const names = Object.keys(config.projects);
+  const every = values.all || (!values.project && names.length > 1);
+  const picked = every ? names.map((n): [string, ProjectConfig] => [n, config.projects[n]!]) : [pickProject(loaded, values.project)];
+
   const changed = values.files
     ? values.files.split(',').filter(Boolean)
     : execFileSync('git', ['diff', '--name-only', `${values.base}...HEAD`], { cwd: root, encoding: 'utf8' }).split('\n').filter(Boolean);
 
-  const allFlows = readFlows(root, p).map((f) => f.name);
   const coverageFile = resolve(values.coverage);
-  let coverage: Record<string, string[]> | undefined;
+  let coverageMap: { projects?: Record<string, { flows?: Record<string, string[]> }> } | undefined;
   if (existsSync(coverageFile)) {
     try {
-      coverage = JSON.parse(readFileSync(coverageFile, 'utf8')).projects?.[project]?.flows;
+      coverageMap = JSON.parse(readFileSync(coverageFile, 'utf8'));
     } catch {
       console.error(`unreadable coverage map at ${coverageFile}; picking every flow`);
     }
   }
 
-  // The fuzzer itself, and what every page is built from.
-  const rel = (abs: string) => relative(root, abs);
-  const always = [
-    `^${escape(rel(specsDir(root, p)))}/`,
-    `^${escape(rel(flowsPath(root, p)))}$`,
-    '^bombadil-kit\\.json$',
-    '(^|/)(package-lock\\.json|yarn\\.lock|pnpm-lock\\.yaml|bun\\.lockb?)$',
-    ...(p.affected?.always ?? []),
-  ].map((s) => new RegExp(s));
+  // Each project builds its own import graph, the slow part: all at once.
+  const results = await Promise.all(
+    picked.map(([name, project]) =>
+      projectAffected({ root, project, changed, coverage: coverageMap?.projects?.[name]?.flows, coverageFile }),
+    ),
+  );
 
-  let result;
-  if (!coverage || !p.affected?.entry) {
-    const why = !p.affected?.entry ? 'no affected.entry in bombadil-kit.json' : `no usable coverage map at ${coverageFile}`;
-    result = { flows: allFlows, reasons: Object.fromEntries(allFlows.map((f) => [f, [why]])), unreached: [] as string[], everything: true };
-  } else {
-    const known = { ...Object.fromEntries(allFlows.map((f) => [f, [] as string[]])), ...coverage };
-    const importers = await importersOf(root, p.affected.entry);
-    result = affectedFlows(changed, known, importers, { routers: p.affected.routers ?? [], always });
-    // A flow added since the map was made has no coverage yet: run it.
-    for (const flow of allFlows.filter((f) => !(f in coverage!))) {
-      if (!result.flows.includes(flow)) result.flows.push(flow);
-      (result.reasons[flow] ??= []).push('new flow: not in the coverage map yet');
-    }
-    result.flows = result.flows.filter((f) => allFlows.includes(f)).sort();
+  if (!every) {
+    const { total, ...result } = results[0]!;
+    if (values.json) console.log(JSON.stringify({ changed, ...result }, null, 2));
+    else for (const flow of result.flows) console.log(flow);
+    console.error(`${changed.length} changed file(s) → ${result.flows.length} of ${total} flow(s)`);
+    for (const flow of result.flows) console.error(`  ${flow}: ${(result.reasons[flow] ?? []).slice(0, 3).join('; ')}`);
+    for (const file of result.unreached) console.error(`  no flow reaches ${file}`);
+    return 0;
   }
 
-  if (values.json) console.log(JSON.stringify({ changed, ...result }, null, 2));
-  else for (const flow of result.flows) console.log(flow);
-  console.error(`${changed.length} changed file(s) → ${result.flows.length} of ${allFlows.length} flow(s)`);
-  for (const flow of result.flows) console.error(`  ${flow}: ${(result.reasons[flow] ?? []).slice(0, 3).join('; ')}`);
-  for (const file of result.unreached) console.error(`  no flow reaches ${file}`);
+  if (values.json) {
+    console.log(JSON.stringify(Object.fromEntries(picked.map(([name], i) => {
+      const { flows, reasons, unreached, everything } = results[i]!;
+      return [name, { flows, reasons, unreached, everything }];
+    })), null, 2));
+  } else {
+    picked.forEach(([name], i) => { for (const flow of results[i]!.flows) console.log(`${name} ${flow}`); });
+  }
+  const flows = results.reduce((n, r) => n + r.flows.length, 0);
+  const total = results.reduce((n, r) => n + r.total, 0);
+  console.error(`${changed.length} changed file(s) → ${flows} of ${total} flow(s) in ${picked.length} project(s)`);
+  picked.forEach(([name], i) => {
+    const r = results[i]!;
+    console.error(`  ${name}: ${r.flows.length} of ${r.total}`);
+    for (const flow of r.flows) console.error(`    ${flow}: ${(r.reasons[flow] ?? []).slice(0, 3).join('; ')}`);
+    for (const file of r.unreached) console.error(`    no flow reaches ${file}`);
+  });
   return 0;
 };
 

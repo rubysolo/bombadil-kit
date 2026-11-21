@@ -79,6 +79,7 @@ example):
 | `server.reuse` | off | use a server already on the port, and leave it running; `--reuse-server` |
 | `flows` | `<dir>/bombadil/flows.json` | without one, a single `explore` flow from `/` |
 | `specs`, `spec` | `<dir>/bombadil`, `spec` | where `<spec>.ts` files live; the default spec |
+| `routes` | `routes.json` beside the spec | the app's route patterns (a JSON array); set it when projects share a specs folder |
 | `signedInCookie` | | `NAME=VALUE` a `signedIn` flow starts with |
 | `viewport` | 390 × 844 | phone width finds more layout bugs |
 | `defaults` | `1m`, faults `0.1`, latency `50` | |
@@ -352,9 +353,10 @@ once per invocation, so all its flows are one sweep.
 | `closed` | not seen in 3 sweeps in a row that reached its route |
 
 A sweep that didn't reach a finding's route says nothing about it. Delete
-`state.json` to start over. `routes.json` beside a spec lists the app's route
-patterns (`/orders/:id`), so URLs group by route and unreached routes show;
-without it, ids in URLs are blurred to `:id` and `:n`.
+`state.json` to start over. `routes.json` beside a spec (or the project's
+`routes`) lists the app's route patterns (`/orders/:id`), so URLs group by
+route and unreached routes show; without it, ids in URLs are blurred to `:id`
+and `:n`.
 
 **API coverage** (the coverage tab, beside routes; `report.json`'s
 `projects[].api`) lists each mock endpoint with its calls by outcome, the
@@ -385,7 +387,13 @@ files are on screen (dev builds only: `_debugSource` up to React 18, the
 npx bombadil-kit affected                      # vs origin/main: flows on stdout, reasons on stderr
 npx bombadil-kit affected --json
 npx bombadil-kit affected --files a.tsx,b.ts --coverage nightly/coverage.json
+npx bombadil-kit affected --all                # every project: `<project> <flow>` per line
 ```
+
+With several projects and no `--project`, `--all` is the default: each
+project maps the diff with its own `affected.entry`, `.routers` and coverage,
+concurrently. `--json` gives `{ <project>: { flows, reasons, unreached,
+everything } }`. A shared library picks flows in every app that renders it.
 
 - A changed file a flow rendered picks that flow.
 - A file that renders nothing (a hook, a store slice, CSS, an image) climbs

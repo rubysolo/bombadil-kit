@@ -2,11 +2,11 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
-import { fill, findConfig, loadConfig, pickProject, readFlows } from '../src/config.ts';
-import { bombadilArgs, replayCommand, replayProject, reproOptions, rerunCommand, runTarget, serverChoice, sweepSettings } from '../src/runner/run.ts';
+import { fill, findConfig, loadConfig, pickProject, projectRoutes, readFlows } from '../src/config.ts';
+import { bombadilArgs, replayCommand, replayProject, reproOptions, rerunCommand, runTarget, serverChoice, sweepReport, sweepSettings } from '../src/runner/run.ts';
 import { ownArgs, tail as cliTail } from '../src/cli.ts';
 import { selectFlows } from '../src/runner/run.ts';
-import { tmp } from './helpers.ts';
+import { row, tmp, writeRun } from './helpers.ts';
 
 const flows = [
   { name: 'explore', start: '/login', allow: ['/*'] },
@@ -226,4 +226,28 @@ test('the CLI takes everything after -- for Bombadil, the separator aside', () =
   assert.deepEqual(cliTail(['--flow', 'checkout', '--', '--exit-on-violation', '--max-steps', '50']), ['--exit-on-violation', '--max-steps', '50']);
   assert.deepEqual(cliTail(['--flow', 'checkout']), []);
   assert.deepEqual(ownArgs(['--flow', 'checkout', '--', '--exit-on-violation']), ['--flow', 'checkout']);
+});
+
+test("the report a sweep rebuilds uses each project's routes, as `report` does", () => {
+  const root = tmp();
+  mkdirSync(join(root, 'apps/web/bombadil'), { recursive: true });
+  writeFileSync(join(root, 'apps/web/bombadil/spec.ts'), "export { noLeakedValues } from './properties.ts';\n");
+  writeFileSync(join(root, 'apps/web/bombadil/routes.json'), JSON.stringify(['/beside-the-spec']));
+  mkdirSync(join(root, 'e2e'), { recursive: true });
+  writeFileSync(join(root, 'e2e/web-routes.json'), JSON.stringify(['/login', '/from-config']));
+  writeFileSync(join(root, 'bombadil-kit.json'), JSON.stringify({ projects: { web: { dir: 'apps/web', server: { command: ['vite'] }, routes: './e2e/web-routes.json' } } }));
+  const loaded = loadConfig(join(root, 'bombadil-kit.json'));
+  writeRun(join(loaded.out, 'runs'), { id: '20261119-192622-s1', rows: [row(0, '/login', null)] });
+
+  const report = sweepReport(loaded, undefined, '2026-11-19T20:00:00Z');
+  assert.deepEqual(report.projects[0]!.routes.filter((r) => r.known).map((r) => r.template).sort(), ['/from-config', '/login']);
+});
+
+test('projectRoutes: repo-relative paths, projects without routes left out', () => {
+  const root = tmp();
+  writeFileSync(join(root, 'bombadil-kit.json'), JSON.stringify({ projects: {
+    a: { dir: 'a', server: { command: ['vite'] }, routes: './e2e/bombadil/a/routes.json' },
+    b: { dir: 'b', server: { command: ['vite'] } },
+  } }));
+  assert.deepEqual(projectRoutes(loadConfig(join(root, 'bombadil-kit.json'))), { a: 'e2e/bombadil/a/routes.json' });
 });
