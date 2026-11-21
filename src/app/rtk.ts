@@ -45,7 +45,8 @@ export const withFaults = <BaseQuery extends AnyFaultableBaseQuery>(
   if (env.VITE_MOCK_FAULT_RATE === undefined || env.VITE_MOCK_FAULT_RATE === '') return baseQuery;
   // At rate 0 it fails nothing, but still logs every call (__mockCalls) for flow milestones.
   const config = parseFaultConfig(env) ?? { rate: 0, seed: 1 };
-  const inject = createFaultInjector({ ...config, ...(spare ? { spare } : {}), ...(isWrite ? { isWrite } : {}) });
+  // It answers with the fault right here, so the fault is delivered when logged.
+  const inject = createFaultInjector({ ...config, delivered: true, ...(spare ? { spare } : {}), ...(isWrite ? { isWrite } : {}) });
   const wrapped = async (args: string | FetchArgs, api: BaseQueryApi, extraOptions: unknown) => {
     const { method, path } = requestOf(args);
     const fault = inject(method, path) as FetchBaseQueryError | undefined;
