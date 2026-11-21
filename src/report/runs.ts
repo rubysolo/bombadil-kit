@@ -22,6 +22,12 @@ export interface RunMeta {
   expected_milestones?: string[];
   /** How to replay this run's trace, from the repo root; runs from before it has none. */
   replay?: string;
+  /**
+   * Set on a `--reproduce` run: the run directory it replayed, repo-relative.
+   * A replay can stop early (Bombadil's "diverged"), so it reaches routes
+   * without testing them: the report lists it but never counts it as a sweep.
+   */
+  replay_of?: string;
   /** What the run handed Bombadil after `--`; absent when there was nothing. */
   bombadil_args?: string[];
   /** How long it explored, as it was given. */

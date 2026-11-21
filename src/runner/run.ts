@@ -1,6 +1,6 @@
 import { spawn, execFileSync } from 'node:child_process';
 import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { isAbsolute, join, relative, resolve } from 'node:path';
 import { createInterface } from 'node:readline';
 import { fill, readFlows, specsDir, type Flow, type Loaded, type ProjectConfig } from '../config.ts';
 import type { RunMeta } from '../report/runs.ts';
@@ -29,6 +29,8 @@ export interface RunOptions {
   reuseServer?: boolean;
   /** The trace to replay, absolute; set by --reproduce, off the CLI's surface. */
   replay?: string;
+  /** The run directory being replayed, repo-relative: run.json's `replay_of`. */
+  replayOf?: string;
 }
 
 const stamp = (d = new Date()) => {
@@ -168,44 +170,46 @@ export const serverChoice = (alreadyUp: boolean, reuse: boolean, origin: string)
 };
 
 /**
- * `--reproduce <run dir>`: what that run's run.json says to run it with. Given
- * `dir`, the replay command names that run's directory instead of seed, faults
- * and data: the trace decides what happens, and run.json only names the server
- * to start under it.
+ * `--reproduce <run dir>`: what that run's run.json says to run it with. The
+ * spec is named relative to `specs`, the project's specs dir as the repo root
+ * sees it (specsDir): a spec outside it is an error, not a fallback to the
+ * flow's. Given `dir`, the replay records it as the run it replays.
  */
-export const reproOptions = (meta: RunMeta, dir?: string): { options: Partial<RunOptions>; project: string } => {
+export const reproOptions = (meta: RunMeta, specs: string, dir?: string): { options: Partial<RunOptions>; project: string } => {
   const target = (meta.target ?? {}) as { kind?: Target; faults?: number; latency_ms?: number; mock_ref_date?: string; viewport?: string };
   const [width, height] = (target.viewport ?? '').split('x').map(Number);
   const live = target.kind === 'live';
-  // run.json's spec is repo-relative, `<dir>/bombadil/<name>.ts`: the flow
-  // names the spec again, and the project comes from run.json itself.
-  const spec = typeof meta.spec === 'string' ? /^(?:.*\/)?bombadil\/([^/]+)\.ts$/.exec(meta.spec)?.[1] : undefined;
-  // What that run handed Bombadil after `--`, so a replay is handed the same;
-  // an early exit aside, since stopping a replay early shows less than it found.
-  const extra = (Array.isArray(meta.bombadil_args) ? meta.bombadil_args : []).filter((a) => a !== '--exit-on-violation');
+  const rel = relative(specs, String(meta.spec ?? ''));
+  if (!meta.spec || rel.startsWith('..') || isAbsolute(rel) || !rel.endsWith('.ts')) {
+    throw new Error(`the run's spec ${meta.spec} is not under ${specs}, the project's specs dir`);
+  }
   return {
     project: String(meta.project ?? ''),
     options: {
       flows: meta.flow ? [meta.flow] : [],
-      spec,
+      spec: rel.slice(0, -'.ts'.length),
       seed: meta.seed,
       time: meta.time_limit,
       width: Number.isFinite(width) ? width : undefined,
       height: Number.isFinite(height) ? height : undefined,
       ...(live ? {} : { faults: target.faults, latency: target.latency_ms, refDate: target.mock_ref_date }),
-      ...(dir ? { replay: dir } : {}),
-      ...(extra.length ? { bombadilArgs: extra } : {}),
+      ...(dir ? { replayOf: dir } : {}),
     },
   };
 };
 
-/** The command that replays one run's trace: `repro.replay`, beside `repro.command`. */
-export const replayCommand = (dir: string, r: { faults?: number; width: number; height: number }, project: string[] = []) =>
-  [
-    'npx bombadil-kit run', ...project, '--reproduce', dir,
-    ...(r.faults === undefined ? [] : ['--faults', r.faults]),
-    '--width', r.width, '--height', r.height,
-  ].join(' ');
+/** The project a replay runs in: the one its run.json names. A `--project` beside it must agree. */
+export const replayProject = (recorded: string, given?: string): string => {
+  if (given && given !== recorded) throw new Error(`that run is project ${recorded}, not ${given}`);
+  return recorded;
+};
+
+/**
+ * The command that replays one run's trace: `repro.replay`, beside
+ * `repro.command`. Only the run directory: a replay takes its seed, faults,
+ * viewport and the rest from that run's run.json, whatever else is passed.
+ */
+export const replayCommand = (dir: string, project: string[] = []) => ['npx bombadil-kit run', ...project, '--reproduce', dir].join(' ');
 
 /**
  * One sweep: starts the dev server once, runs Bombadil once per flow, writes
@@ -297,7 +301,8 @@ export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
         replay: o.replay,
       });
 
-      console.error(`→ ${flow.name}: ${origin}${flow.start} for ${time} (${kind === 'live' ? 'live backend' : `faults ${faults}, seed ${seed}`})`);
+      const start = fill(flow.start, values);
+      console.error(`→ ${flow.name}: ${origin}${start}${o.replay ? ' (replay)' : ` for ${time}`} (${kind === 'live' ? 'live backend' : `faults ${faults}, seed ${seed}`})`);
       const mark = statSync(logPath).size;
       const startedAt = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
       const child = spawn(bombadil, args, { cwd: root, stdio: ['ignore', 'inherit', 'pipe'] });
@@ -328,7 +333,7 @@ export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
             spec: relative(root, specFile),
             flow: flow.name,
             seed,
-            start: fill(flow.start, values),
+            start,
             started_at: startedAt,
             commit,
             target: runTarget(kind, record),
@@ -338,7 +343,8 @@ export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
             command: again,
             ...(flow.milestones?.length ? { expected_milestones: flow.milestones } : {}),
             ...(o.bombadilArgs?.length ? { bombadil_args: o.bombadilArgs } : {}),
-            replay: replayCommand(relative(root, outDir), kind === 'live' ? { width, height } : { faults, width, height }, projectName),
+            replay: replayCommand(relative(root, outDir), projectName),
+            ...(o.replayOf ? { replay_of: o.replayOf } : {}),
           },
           null,
           2,
@@ -382,8 +388,10 @@ const reproduce = async (loaded: Loaded, o: RunOptions): Promise<number> => {
   const meta = JSON.parse(readFileSync(join(dir, 'run.json'), 'utf8')) as RunMeta;
   const trace = join(dir, 'trace.jsonl');
   if (!existsSync(trace)) throw new Error(`${dir} has no trace.jsonl to replay`);
-  const { options, project } = reproOptions(meta, relative(loaded.root, dir));
-  if (!loaded.config.projects[project]) throw new Error(`run ${dir} is project ${project}, which bombadil-kit.json has no entry for`);
+  const project = replayProject(String(meta.project ?? ''), o.project || undefined);
+  const p = loaded.config.projects[project];
+  if (!p) throw new Error(`run ${dir} is project ${project}, which bombadil-kit.json has no entry for`);
+  const { options } = reproOptions(meta, relative(loaded.root, specsDir(loaded.root, p)), relative(loaded.root, dir));
   console.error(`→ replaying ${dir} (${project}, seed ${meta.seed})`);
   // Bombadil replays the trace itself, so nothing from the original run's `--`
   // carries over: --exit-on-violation would stop a replay before its end.

@@ -156,3 +156,29 @@ test('repro.replay rides along with the run, and a run without it is as before',
   assert.ok(!('replay' in older.repro));
 });
 
+
+test('a replay is listed with its runs but is no sweep: it reaches routes without testing them', () => {
+  const replay = (id: string): RunResult => {
+    const r = run(id, []);
+    r.meta = { ...r.meta, replay_of: 'tmp/bombadil/runs/web/r1', exit_code: 1 };
+    return r;
+  };
+  let s = applySweep(emptyState(), [run('r1', [{ property: 'spinnersSettle', route: '/cart' }])], 't1');
+  // Three replays that reached /cart cleanly, each folded in on its own.
+  for (const id of ['p1', 'p2', 'p3']) s = applySweep(s, [replay(id)], 't');
+  assert.equal(s.sweeps.length, 1, 'no sweep for replays alone');
+  let report = buildReport(s, { web: { properties: [], routes: ['/cart'] } }, { generatedAt: 'now', evidence: () => [] });
+  assert.equal(report.findings[0]!.status, 'new', 'still new: nothing re-tested it');
+  assert.equal(report.projects[0]!.routes.find((r) => r.template === '/cart')!.states, 3, 'routes are r1\'s alone');
+  assert.deepEqual(report.projects[0]!.runs.map((r) => [r.id, r.replay_of]), [
+    ['web/r1', undefined], ['web/p1', 'tmp/bombadil/runs/web/r1'], ['web/p2', 'tmp/bombadil/runs/web/r1'], ['web/p3', 'tmp/bombadil/runs/web/r1'],
+  ]);
+
+  // Beside an explored run, the sweep is the explored run's alone.
+  s = applySweep(s, [run('r2', []), replay('p4')], 't2');
+  assert.deepEqual(s.sweeps.at(-1)!.projects.web!.runs, ['web/r2']);
+  assert.equal(s.sweeps.at(-1)!.projects.web!.actions, 100);
+  report = buildReport(s, { web: { properties: [], routes: ['/cart'] } }, { generatedAt: 'now', evidence: () => [] });
+  assert.equal(report.findings[0]!.clean_sweeps, 1);
+  assert.deepEqual(report.projects[0]!.runs.map((r) => r.id), ['web/r2', 'web/p4']);
+});

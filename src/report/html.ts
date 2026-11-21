@@ -289,10 +289,10 @@ function project(name, tab) {
     body = '<div class="chart">' + p.history.map((h, i) =>
       '<div class="' + (i === p.history.length - 1 ? 'last' : '') + '"><span class="w">' + h.findings + '</span><i style="height:' + Math.max(2, (120 * h.findings) / max) + 'px"></i><span>#' + h.sweep + '</span></div>').join('') + '</div>' +
       '<div class="scroll"><table><thead><tr><th>RUN (LATEST SWEEP)</th><th>SEED</th><th>ACTIONS</th><th>EXIT</th><th>RERUN</th></tr></thead><tbody>' +
-      p.runs.map((r) => '<tr><td>' + esc(r.id) + '</td><td>' + r.seed + '</td><td>' + r.actions.toLocaleString('en-US') + '</td><td class="' + (r.exit_code ? 'm' : 'g') + '">' + r.exit_code + '</td><td class="dim">' + esc(r.command) + '</td></tr>').join('') +
+      p.runs.map((r) => '<tr><td>' + esc(r.id) + '</td><td>' + r.seed + '</td><td>' + r.actions.toLocaleString('en-US') + '</td><td class="' + (r.exit_code ? 'm' : 'g') + '">' + r.exit_code + '</td><td class="dim">' + esc(r.replay_of ? 'replay of ' + r.replay_of : r.command) + '</td></tr>').join('') +
       '</tbody></table></div>';
   }
-  const last = p.runs.at(-1);
+  const last = p.runs.filter((r) => !r.replay_of).at(-1);
   return header(home + '<span class="dim">/</span><span class="here">' + esc(name) + '</span>', '<span class="dim">' + esc(targetOf(p.target)) + ' · ' + p.history.length + ' sweeps · ' + p.actions.toLocaleString('en-US') + ' actions</span>') +
     '<div class="cols"><aside class="side"><section class="panel"><div class="head"><h2>Properties</h2></div>' +
     p.properties.map((x) => '<div class="row"><span>' + esc(x.name) + '</span>' + (x.open.length ? '<a class="m" href="#/f/' + enc(x.open[0]) + '"><b>' + x.open.length + ' open</b></a>' : '<span class="g">held</span>') + '</div>').join('') +

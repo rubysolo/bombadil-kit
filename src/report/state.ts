@@ -10,7 +10,8 @@ import type { ApiCoverage, RunFinding, RunResult } from './runs.ts';
  *   closed  not seen in CLOSE_AFTER sweeps in a row that reached its route
  *
  * A sweep that didn't run the project, or ran it without reaching the route,
- * says nothing about the finding and doesn't count as clean.
+ * says nothing about the finding and doesn't count as clean. Neither does a
+ * replay (`--reproduce`): it is kept in `runs`, and nowhere else.
  */
 export const CLOSE_AFTER = 3;
 
@@ -73,6 +74,8 @@ export interface RunInfo {
   command: string;
   /** How to replay the run's trace; absent in state written before it. */
   replay?: string;
+  /** The run it replayed, for a `--reproduce` run (which belongs to no sweep's runs). */
+  replay_of?: string;
   spec: string;
   target: Record<string, unknown>;
 }
@@ -106,10 +109,26 @@ export const mergeApi = (into: ApiCoverage | undefined, run: ApiCoverage): ApiCo
 
 export const emptyState = (): State => ({ schema: 'bombadil-state/v1', sweeps: [], runs: {}, findings: {}, coverage: {} });
 
-/** Adds the runs not yet in `state` as one new sweep. Returns `state` itself when there are none. */
+const runInfo = (r: RunResult, sweep: number): RunInfo => ({
+  sweep, seed: r.meta.seed, actions: r.actions, exit_code: r.meta.exit_code, started_at: r.meta.started_at,
+  command: r.meta.command ?? '', replay: r.meta.replay, ...(r.meta.replay_of ? { replay_of: r.meta.replay_of } : {}),
+  spec: r.meta.spec, target: r.meta.target,
+});
+
+/**
+ * Adds the runs not yet in `state` as one new sweep. Replays among them are
+ * recorded as runs of the latest sweep, and add nothing to its history; with
+ * only replays there is no new sweep. Returns `state` itself when nothing is new.
+ */
 export const applySweep = (state: State, runs: readonly RunResult[], at: string): State => {
-  const fresh = runs.filter((r) => !(r.id in state.runs));
-  if (fresh.length === 0) return state;
+  const all = runs.filter((r) => !(r.id in state.runs));
+  if (all.length === 0) return state;
+  const replays = all.filter((r) => r.meta.replay_of);
+  const fresh = all.filter((r) => !r.meta.replay_of);
+  if (fresh.length === 0) {
+    const latest = state.sweeps.at(-1)?.id ?? 0;
+    return { ...state, runs: { ...state.runs, ...Object.fromEntries(replays.map((r) => [r.id, runInfo(r, latest)])) } };
+  }
 
   const id = (state.sweeps.at(-1)?.id ?? 0) + 1;
   const projects: Record<string, SweepProject> = {};
@@ -162,12 +181,7 @@ export const applySweep = (state: State, runs: readonly RunResult[], at: string)
     sweeps: [...state.sweeps, { id, at, commits, projects }],
     runs: {
       ...state.runs,
-      ...Object.fromEntries(
-        fresh.map((r) => [
-          r.id,
-          { sweep: id, seed: r.meta.seed, actions: r.actions, exit_code: r.meta.exit_code, started_at: r.meta.started_at, command: r.meta.command ?? '', replay: r.meta.replay, spec: r.meta.spec, target: r.meta.target },
-        ]),
-      ),
+      ...Object.fromEntries([...fresh, ...replays].map((r) => [r.id, runInfo(r, id)])),
     },
     findings,
     coverage,

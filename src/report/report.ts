@@ -79,7 +79,8 @@ export interface ReportProject {
   api?: { endpoints: ReportEndpoint[]; reached: number; known: number };
   /** Per flow with milestones expected or recorded; absent when none has. */
   milestones?: ReportFlowMilestones[];
-  runs: { id: string; seed: number; actions: number; exit_code: number; started_at: string; command: string }[];
+  /** The latest sweep's runs, then the replays made since (`replay_of` set: no part of any sweep). */
+  runs: { id: string; seed: number; actions: number; exit_code: number; started_at: string; command: string; replay_of?: string }[];
   history: { sweep: number; at: string; findings: number; actions: number }[];
 }
 
@@ -201,9 +202,15 @@ export const buildReport = (state: State, info: Record<string, ProjectInfo>, opt
     const extraRoutes = Object.entries(sp.routes)
       .filter(([t]) => !pi.routes.includes(t))
       .sort((a, b) => b[1] - a[1]);
-    const runs = sp.runs.map((id) => {
+    const replays = Object.entries(state.runs)
+      .filter(([id, r]) => r.replay_of && id.startsWith(`${name}/`) && r.sweep >= last.id)
+      .map(([id]) => id);
+    const runs = [...sp.runs, ...replays].map((id) => {
       const r = runInfo(id);
-      return { id, seed: r?.seed ?? 0, actions: r?.actions ?? 0, exit_code: r?.exit_code ?? 0, started_at: r?.started_at ?? '', command: r?.command ?? '' };
+      return {
+        id, seed: r?.seed ?? 0, actions: r?.actions ?? 0, exit_code: r?.exit_code ?? 0, started_at: r?.started_at ?? '', command: r?.command ?? '',
+        ...(r?.replay_of ? { replay_of: r.replay_of } : {}),
+      };
     });
     const firstRun = runInfo(sp.runs[0] ?? '');
     const api = apiCoverage(state.api?.[name]);

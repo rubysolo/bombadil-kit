@@ -73,7 +73,9 @@ const cmdRun = async (loaded: Loaded, argv: string[]) => {
     // Everything after `--` is Bombadil's: parseArgs stops at the separator, so
     // the tail is read from argv, where `--` still stands (see tail()).
   });
-  const [project] = pickProject(loaded, values.project);
+  // A replay's project is the one its run.json names (see reproduce()); only a
+  // fresh run has to pick one, which several projects make --project's job.
+  const project = values.reproduce ? (values.project ?? '') : pickProject(loaded, values.project)[0];
   return run(loaded, {
     project,
     flows: values.flow,
@@ -223,4 +225,13 @@ const main = async () => {
 // supports 22.18. argv[1] is what `node` was pointed at; the npm bin is a
 // symlink to this file, so resolve both sides before comparing. An importer's
 // argv[1] is the importer, so importing this file runs nothing.
-if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) await main();
+// A wrapper or loader can pass an argv[1] that isn't a file, and realpath
+// throws on it: then this isn't the entry point.
+const isEntry = () => {
+  try {
+    return !!process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url));
+  } catch {
+    return false;
+  }
+};
+if (isEntry()) await main();

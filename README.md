@@ -108,8 +108,15 @@ npx bombadil browser inspect tmp/bombadil/runs/web/<run>   # step through one ru
 A finding's `repro.command` reruns the flow; `--reproduce <run dir>` replays it.
 It reads that run's `run.json`, starts the server with its seed, faults, latency,
 mock date and viewport, and has Bombadil replay its trace on the same flow and
-spec instead of exploring. Each finding in `report.json` carries the command as
+spec instead of exploring. The project comes from `run.json` too, so there's no
+need for `--project`. Each finding in `report.json` carries the command as
 `repro.replay`, beside `repro.command`.
+
+A replay is best-effort: Bombadil stops one that diverges from the original
+("reproduction and original test diverged!"), which is common with faults on.
+So a replay's `run.json` carries `replay_of: "<run dir>"`, and the report lists
+it with the latest sweep's runs but never counts it as a sweep. Reaching a
+route in a replay doesn't test it, and it can't close a finding.
 
 `--reuse-server` is for a server you started yourself: something already
 answering on the port is used instead of refused, and not stopped afterwards.
