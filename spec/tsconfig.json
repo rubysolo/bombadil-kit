@@ -5,6 +5,9 @@
     "moduleResolution": "bundler",
     "strict": true,
     "noUncheckedIndexedAccess": true,
+    // Apps type-check this source with their own flags (moonshot: noUnusedLocals).
+    "noUnusedLocals": true,
+    "noUnusedParameters": true,
     "lib": ["es2023", "dom", "dom.iterable"],
     "allowImportingTsExtensions": true,
     "skipLibCheck": true,

@@ -12,7 +12,7 @@
 //   fuzz_fence  the flow's allowed paths (`fenced`)
 //   fuzz_root   the repo's absolute path (`appRenders`, for repo-relative files)
 //   fuzz_app    the app's directory in the repo (`appRenders`, Vite URLs)
-import { always, eventually, now } from '@antithesishq/bombadil';
+import { always, eventually } from '@antithesishq/bombadil';
 import {
   actions,
   extract,
