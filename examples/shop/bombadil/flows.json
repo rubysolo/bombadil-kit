@@ -1,0 +1,16 @@
+[
+  {
+    "name": "explore",
+    "about": "The whole shop from the product list: an unfenced random walk.",
+    "start": "/",
+    "allow": ["/*"],
+    "spec": "spec"
+  },
+  {
+    "name": "buy",
+    "about": "A product to an order confirmation: add to cart, check out.",
+    "start": "/products/1",
+    "allow": ["/products/*", "/cart", "/checkout", "/orders/*"],
+    "spec": "flow"
+  }
+]

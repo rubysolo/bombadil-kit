@@ -1,0 +1,75 @@
+# The example shop (examples/shop), fuzzed with this checkout of the kit: a
+# sweep of the correct app must find nothing, and each planted bug in
+# examples/shop/plants.json must be caught by its property. This is how a kit
+# change is proven on a real app, both ways.
+name: example
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+    paths:
+      - spec/**
+      - src/**
+      - examples/**
+      - package.json
+      - package-lock.json
+      - .github/workflows/example.yml
+
+concurrency:
+  group: example-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  plants:
+    runs-on: ubuntu-latest
+    outputs:
+      cases: ${{ steps.list.outputs.cases }}
+    steps:
+      - uses: actions/checkout@v7
+      - id: list
+        # "clean" plus every plant, from plants.json, so the matrix never drifts from it.
+        run: echo "cases=$(node -p 'JSON.stringify(["clean", ...Object.keys(require("./examples/shop/plants.json"))])')" >> "$GITHUB_OUTPUT"
+
+  sweep:
+    needs: plants
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    strategy:
+      fail-fast: false
+      matrix:
+        case: ${{ fromJson(needs.plants.outputs.cases) }}
+    container:
+      # Playwright's image ships a Chromium and its libraries; Bombadil drives it.
+      image: mcr.microsoft.com/playwright:v1.64.1-noble
+    defaults:
+      run:
+        shell: bash
+    steps:
+      - uses: actions/checkout@v7
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+      - name: install
+        run: |
+          git config --global --add safe.directory "$GITHUB_WORKSPACE"
+          npm ci --no-audit --no-fund
+          npm run build
+          npm ci --no-audit --no-fund --prefix examples/shop
+          # Bombadil finds Chrome through $CHROME before the usual paths.
+          echo "CHROME=$(find /ms-playwright -path '*chrome-linux*/chrome' -type f | head -1)" >> "$GITHUB_ENV"
+      - name: typecheck the example
+        if: matrix.case == 'clean'
+        run: npm run typecheck --prefix examples/shop
+      - name: sweep and check the report
+        working-directory: examples/shop
+        run: node check.mjs ${{ matrix.case }}
+      - if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: example-${{ matrix.case }}
+          path: examples/shop/tmp/bombadil
+          retention-days: 7

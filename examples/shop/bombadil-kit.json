@@ -1,0 +1,30 @@
+{
+  "title": "example shop",
+  "projects": {
+    "shop": {
+      "dir": ".",
+      "server": {
+        "command": ["npx", "vite", "--host", "127.0.0.1", "--port", "{port}", "--strictPort"],
+        "env": {
+          "VITE_API_MOCK": "true",
+          "VITE_MOCK_LATENCY_MS": "{latency}",
+          "VITE_MOCK_FAULT_RATE": "{faults}",
+          "VITE_MOCK_FAULT_SEED": "{seed}",
+          "VITE_MOCK_SEED": "{seed}",
+          "VITE_MOCK_REF_DATE": "{refDate}",
+          "VITE_FUZZ": "true"
+        },
+        "port": 5199
+      },
+      "viewport": { "width": 390, "height": 844 },
+      "defaults": { "time": "30s", "faults": 0.1, "latency": 50 },
+      "watch": ["."],
+      "quiet": ["failed to instrument requested script"],
+      "affected": {
+        "entry": "src/main.tsx",
+        "routers": ["src/App.tsx"],
+        "always": ["^(index\\.html|vite\\.config\\.ts|package\\.json)$"]
+      }
+    }
+  }
+}

@@ -1,0 +1,21 @@
+{
+  "crash": { "property": "noErrorBoundary", "flow": "explore" },
+  "spinner": {
+    "property": "spinnersSettle",
+    "flow": "buy",
+    "known": "the walker never stays on a page the 15s spinnersClear waits for (longest stay on /cart: 0.14s), so a spinner that never clears goes unseen"
+  },
+  "leak": { "property": "noLeakedValues", "flow": "buy" },
+  "overflow": { "property": "noHorizontalOverflow", "flow": "explore" },
+  "silent-write": {
+    "property": "failedWritesAreShown",
+    "flow": "buy",
+    "faults": 0.5,
+    "known": "any visible alert within 5s counts, on any page: in one 30s run all 8 silent add-to-cart failures were covered by unrelated alerts after the walker moved on (checkout's 422, an order's Not found); caught only when the walker happens not to"
+  },
+  "noisy": { "property": "noConsoleErrorsUnlessFaulted", "flow": "explore" },
+  "overlap": { "property": "noTextOverLogo", "flow": "explore" },
+  "blank": { "property": "appRenders", "flow": "explore" },
+  "throw": { "property": "noUncaughtExceptions", "flow": "buy" },
+  "reject": { "property": "noUnhandledPromiseRejections", "flow": "buy", "faults": 0.5 }
+}

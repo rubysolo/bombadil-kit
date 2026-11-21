@@ -291,5 +291,11 @@ npm run typecheck  # the CLI, and the spec library against Bombadil's types
 npm run build      # dist/, what the bin runs (dist/cli.js executable)
 ```
 
+`examples/shop/` is a small React + RTK Query app integrated with the kit,
+with a planted bug per property (`VITE_PLANT`). `node check.mjs` there runs a
+sweep and checks its report: the app as it is finds nothing, each plant is
+caught by its property. CI runs every case (`.github/workflows/example.yml`).
+A new property gets a plant in the same PR.
+
 Fonts: Rajdhani and JetBrains Mono, Latin subsets from @fontsource, OFL
 (`fonts/`), embedded in the report so it looks the same wherever it's opened.

@@ -29,6 +29,8 @@ Installed as a dependency, this file and the prompts are at
   (`tmp/bombadil/report/report.json`), not just the exit code. A property that
   never fires and a property that can't fire look the same from the outside;
   break the app on purpose once to see each new property catch it.
+- **Working on the kit itself?** The real app is `examples/shop/`: `node
+  check.mjs --all` there. A new property gets a plant (`plants.json`).
 - **Findings aren't failures of the integration.** The first sweeps find real
   bugs. List them for the person; don't fix app bugs as part of the
   integration unless asked.
@@ -49,4 +51,5 @@ src/affected/      diff → flows
 src/cli.ts         the bombadil-kit command
 templates/         bombadil-kit.json, bombadil/ (specs, flows, routes), github/fuzz.yml
 prompts/           the prompts above
+examples/shop/     an app integrated with the kit, a planted bug per property; check.mjs proves both ways
 ```
