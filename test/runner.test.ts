@@ -3,7 +3,8 @@ import assert from 'node:assert/strict';
 import { mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fill, findConfig, loadConfig, pickProject, readFlows } from '../src/config.ts';
-import { bombadilArgs, selectFlows } from '../src/runner/run.ts';
+import { bombadilArgs, rerunCommand, runTarget, sweepSettings } from '../src/runner/run.ts';
+import { selectFlows } from '../src/runner/run.ts';
 import { tmp } from './helpers.ts';
 
 const flows = [
@@ -73,4 +74,36 @@ test('config: several projects need --project', () => {
   assert.throws(() => pickProject(loaded), /pass --project/);
   assert.equal(pickProject(loaded, 'b')[0], 'b');
   assert.throws(() => pickProject(loaded, 'c'), /no project c/);
+});
+
+const sweep = { flow: 'checkout', faults: 0.1, latency: 50, seed: 7, refDate: '2026-11-21', time: '1m', width: 390, height: 844 };
+
+test('runTarget: a mock project records faults, latency and the mock date, as before', () => {
+  assert.deepEqual(runTarget('mock', sweep), {
+    kind: 'mock', flow: 'checkout', faults: 0.1, latency_ms: 50, viewport: '390x844', mock_ref_date: '2026-11-21',
+  });
+});
+
+test('runTarget: a live project records only what it controls', () => {
+  assert.deepEqual(runTarget('live', sweep), { kind: 'live', flow: 'checkout', viewport: '390x844' });
+});
+
+test('rerunCommand: a live run has no seed, faults or ref date to replay', () => {
+  assert.equal(
+    rerunCommand('mock', sweep, ['--project', 'web']),
+    'npx bombadil-kit run --project web --flow checkout --seed 7 --faults 0.1 --ref-date 2026-11-21 --time 1m --width 390 --height 844',
+  );
+  assert.equal(
+    rerunCommand('live', sweep, ['--project', 'web-live']),
+    'npx bombadil-kit run --project web-live --flow checkout --time 1m --width 390 --height 844',
+  );
+});
+
+test('sweepSettings: live defaults to no faults and refuses them; mock keeps 0.1', () => {
+  assert.equal(sweepSettings({ target: 'live' }, {}).faults, 0);
+  assert.equal(sweepSettings({}, {}).faults, 0.1);
+  assert.equal(sweepSettings({ defaults: { faults: 0.3 } }, {}).faults, 0.3);
+  assert.throws(() => sweepSettings({ target: 'live' }, { faults: 0.2 }), /live.*faults/);
+  assert.throws(() => sweepSettings({ target: 'live', defaults: { faults: 0.2 } }, {}), /live.*faults/);
+  assert.equal(sweepSettings({ target: 'live' }, { faults: 0 }).faults, 0);
 });

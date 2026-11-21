@@ -29,6 +29,12 @@ export interface KitConfig {
 export interface ProjectConfig {
   /** The app's directory. The server runs here. */
   dir: string;
+  /**
+   * What the app talks to. `mock` (the default): its mock API, with seeded
+   * data and injected faults. `live`: a real backend; no faults (the runner
+   * refuses them), and run.json records no seed or mock date to replay.
+   */
+  target?: 'mock' | 'live';
   server: {
     /**
      * argv for the dev server. `{port}`, `{seed}`, `{faults}`, `{latency}` and

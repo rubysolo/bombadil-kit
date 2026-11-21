@@ -73,6 +73,7 @@ example):
 | `title` | `bombadil` | the report's heading |
 | `out` | `tmp/bombadil` | runs in `<out>/runs/<project>/`, the report in `<out>/report/` |
 | `projects.<name>.dir` | | the app; the server runs here |
+| `target` | `mock` | `live`: a real backend, see [below](#against-a-real-backend) |
 | `server.command`, `server.env` | | `{port}` `{seed}` `{faults}` `{latency}` `{refDate}` are filled in |
 | `server.port`, `server.ready` | `5199`, `/` | |
 | `flows` | `<dir>/bombadil/flows.json` | without one, a single `explore` flow from `/` |
@@ -99,6 +100,32 @@ npx bombadil browser inspect tmp/bombadil/runs/web/<run>   # step through one ru
 ```
 
 `run` exits 0 clean, 2 on a property violation, 1 otherwise.
+
+### Against a real backend
+
+A second project, the same app with the mock env left out, pointed at a
+disposable backend:
+
+```json
+"web-live": {
+  "dir": "apps/web",
+  "target": "live",
+  "server": { "command": ["npx", "vite", "--port", "{port}"], "env": { "VITE_API_URL": "https://staging.example.test" } },
+  "defaults": { "time": "2m" }
+}
+```
+
+It catches what a mock can't: drift between the mock and the real API
+(`noLeakedText`), real 4xx/5xx (Bombadil's `noHttpErrorCodes`), real data in
+the layout. It can't inject faults, so the runner refuses `--faults`, and
+`failedWritesShown` never triggers; `consoleQuietUnlessFaulted` excuses
+nothing. run.json records `kind: live` and no seed or mock date: a finding's
+command reruns the flow, not the data.
+
+The fuzzer clicks everything: it creates, deletes and changes things. Reset
+the backend before each sweep, and stub mail, payments and third-party
+calls on its side. Real latency is slower than a mock: give `spinnersClear` a
+larger `within`. Run it nightly; read its findings as leads, not gates.
 
 ## Flows
 
