@@ -480,7 +480,8 @@ export const noBlankPage = ({
  *
  * Reads window.__mockCalls (bombadil-kit/faults' createFaultInjector fills
  * it; a mock layer of the app's own can too) and, once per document,
- * window.__mockEndpoints, the inventory.
+ * window.__mockEndpoints, the inventory. A log that drops its oldest entries
+ * needs `seq` on each (MockCall); without it the log must only grow.
  */
 export const apiCalls = () => {
   const api = extract((state) => freshApiCalls(state.window as ApiWindow));

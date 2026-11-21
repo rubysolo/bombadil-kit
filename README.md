@@ -323,6 +323,7 @@ entry per call (`withFaults`/`createFaultInjector` do, while faults are on):
 | `variant` | optional. The named response it answered with (`empty`, `locked`) |
 | `outcome` | `'ok'`, `'error'`, `'slow'` or `'hang'` |
 | `at` | `Date.now()` when it was called |
+| `seq` | optional. Counts up per call, across the page (`createFaultInjector` sets it). With it the log may be capped (push, then shift the oldest); without it the log must only grow, or the calls past the cap go uncounted |
 
 `window.__mockEndpoints`, `{ key, variants }[]`, optional, is the inventory:
 endpoints no flow called show in the report, dimmed.

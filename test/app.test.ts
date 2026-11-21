@@ -103,6 +103,9 @@ test('createFaultInjector: logs every call on window.__mockCalls, ok or error', 
       { key: 'POST /mock/reset', outcome: 'ok' },
     ]);
     assert.ok(Math.abs(calls[0]!.at - Date.now()) < 1000);
+    // seq counts up across injectors, so freshApiCalls survives a capped log.
+    const seqs = (calls as { seq?: number }[]).map((c) => c.seq!);
+    assert.ok(seqs.every((n, i) => Number.isInteger(n) && (i === 0 || n > seqs[i - 1]!)), String(seqs));
   } finally {
     delete g.window;
   }
