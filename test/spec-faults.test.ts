@@ -47,6 +47,12 @@ test('faultInFlight: an error for `grace` ms; checks every fault, not only the l
   assert.equal(faultInFlight([fault({ at: t + 3000 }), fault({ at: t })], t + 4000, 2000), true);
 });
 
+test('faultInFlight: an error with `deliveredAt` excuses `grace` ms from delivery, not from `at`', () => {
+  const f = fault({ deliveredAt: t + 3000 });
+  assert.equal(faultInFlight([f], t + 7999), true);
+  assert.equal(faultInFlight([f], t + 8000), false);
+});
+
 test('faultInFlight: a slow one until at + delayMs + grace', () => {
   const slow = fault({ kind: 'slow', delayMs: 8000 });
   assert.equal(faultInFlight([slow], t + 12_999), true);
@@ -145,9 +151,48 @@ test('unannouncedWrite: an alert on the page the failure landed on settles it, o
 test('unannouncedWrite: leaving the page before an alert shows there is unannounced, even if the next page has one', () => {
   const w = watch();
   assert.equal(unannouncedWrite(w, [fault()], t + 10, [], 1, false), null);
-  assert.equal(lineOf(unannouncedWrite(w, [fault()], t + 40, [], 2, true)), line);
+  assert.equal(lineOf(unannouncedWrite(w, [fault()], t + 2010, [], 2, true)), line);
   // Reported once, not on every state after.
-  assert.equal(unannouncedWrite(w, [fault()], t + 80, [], 2, false), null);
+  assert.equal(unannouncedWrite(w, [fault()], t + 2050, [], 2, false), null);
+});
+
+test('unannouncedWrite: leaving within `leaveGrace` of the failure drops it; the app had no time to answer', () => {
+  // The walker clicked away right after Save: +50ms is not a finding.
+  const f = fault();
+  const w = watch();
+  assert.equal(unannouncedWrite(w, [f], t + 10, [], 1, false), null);
+  assert.equal(unannouncedWrite(w, [f], t + 50, [], 2, false), null);
+  // Dropped, not deferred: nothing is owed on the old page or the new one.
+  assert.equal(unannouncedWrite(w, [f], t + 6000, [], 2, false), null);
+  assert.deepEqual(w.pending, []);
+  // leaveGrace is the last argument, in ms.
+  const strict = watch();
+  assert.equal(unannouncedWrite(strict, [f], t + 10, [], 1, false, 5000, 1500, 0), null);
+  assert.equal(lineOf(unannouncedWrite(strict, [f], t + 50, [], 2, false, 5000, 1500, 0)), line);
+});
+
+test('unannouncedWrite: with `deliveredAt`, leaving before delivery drops it and leaving after reports it', () => {
+  // Logged when the call started, delivered 3s later (an injected slow error).
+  const f = fault({ deliveredAt: t + 3000 });
+  // Leaving at +2s, before the error reached the app: dropped.
+  const early = watch();
+  assert.equal(unannouncedWrite(early, [f], t + 10, [], 1, false), null);
+  assert.equal(unannouncedWrite(early, [f], t + 2000, [], 2, false), null);
+  assert.deepEqual(early.pending, []);
+  // Staying: `within` counts from delivery, so +7s is still in time and +8.1s isn't.
+  const stay = watch();
+  assert.equal(unannouncedWrite(stay, [f], t + 10, [], 1, false), null);
+  assert.equal(unannouncedWrite(stay, [f], t + 7000, [], 1, false), null);
+  assert.equal(lineOf(unannouncedWrite(stay, [f], t + 8100, [], 1, false)), line);
+  // Leaving after delivery without an alert: unannounced, with no leaveGrace on top (the layer said when).
+  const late = watch();
+  assert.equal(unannouncedWrite(late, [f], t + 10, [], 1, false), null);
+  assert.equal(lineOf(unannouncedWrite(late, [f], t + 3100, [], 2, false)), line);
+  // Delivered when logged (withFaults): leaving at +40ms is unannounced, as before leaveGrace.
+  const now = fault({ deliveredAt: t });
+  const quick = watch();
+  assert.equal(unannouncedWrite(quick, [now], t + 10, [], 1, false), null);
+  assert.equal(lineOf(unannouncedWrite(quick, [now], t + 40, [], 2, false)), line);
 });
 
 test('unannouncedWrite: no alert within `within` ms on that page is unannounced', () => {
@@ -180,7 +225,7 @@ test('unannouncedWrite: only fresh, unquiet error writes; each one owes its own 
   const b = fault({ path: '/b', at: t + 100 });
   assert.equal(unannouncedWrite(two, [a], t + 10, [], 1, true), null);
   assert.equal(unannouncedWrite(two, [a, b], t + 110, [], 1, false), null);
-  assert.equal(lineOf(unannouncedWrite(two, [a, b], t + 140, [], 2, false)), 'POST /b → 500');
+  assert.equal(lineOf(unannouncedWrite(two, [a, b], t + 1200, [], 2, false)), 'POST /b → 500');
 });
 
 test('requestPattern: record segments become :id, endpoint names stay', () => {

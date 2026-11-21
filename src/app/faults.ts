@@ -21,6 +21,12 @@ export interface FaultConfig {
   spare?: RegExp[];
   /** Whether a request changes data, for transports without HTTP verbs; fills InjectedFault's `write`. */
   isWrite?: (method: string, path: string) => boolean;
+  /**
+   * The caller answers with the fault at once (withFaults does): logs
+   * `deliveredAt` = `at`, so failedWritesShown gives no `leaveGrace`. Leave it
+   * off if the layer answers after a delay, and log `deliveredAt` itself.
+   */
+  delivered?: boolean;
 }
 
 /** A failure, in RTK Query's FetchBaseQueryError shape (other clients: map it). */
@@ -39,8 +45,22 @@ export interface InjectedFault {
   path: string;
   /** What the request failed with; a status of the mock layer's own for faults that aren't HTTP. */
   status: Fault['status'] | (string & {});
-  /** `Date.now()` when the fault was injected (for `slow` and `hang`: when the request started). */
+  /**
+   * `Date.now()` when the fault was injected. For `slow` and `hang`: when the
+   * request started. For `'error'`: when the failure reached the app if the
+   * layer knows it, else when the call started (most layers log it there,
+   * before their response delay); then set `deliveredAt`.
+   */
   at: number;
+  /**
+   * For `'error'`: `Date.now()` when the failure reached the app, if the layer
+   * logged it earlier (at the call's start, before a delay), or `at` when it
+   * knows the two are the same. failedWritesShown counts `within` from it and
+   * drops a write the walker left before it (no `leaveGrace`), and
+   * consoleQuietUnlessFaulted counts its `grace` from it, instead of `at`. It
+   * may be in the future when logged.
+   */
+  deliveredAt?: number;
   /**
    * Whether the request changes data. Overrides the `method !== 'GET'` guess;
    * transports without HTTP verbs (RPC, Salesforce remoting, GraphQL) set it.
@@ -133,7 +153,7 @@ export const FAULTS: Fault[] = [
  * Each request goes onto window.__mockCalls as `METHOD /path`, `'error'` if
  * it faulted it, else `'ok'` (spared ones too: the app did call them).
  */
-export const createFaultInjector = ({ rate, seed, spare = [/^\/mock\//], isWrite }: FaultConfig) => {
+export const createFaultInjector = ({ rate, seed, spare = [/^\/mock\//], isWrite, delivered }: FaultConfig) => {
   const random = prng(seed);
   const call = (method: string, path: string, outcome: CallOutcome) => {
     if (typeof window !== 'undefined') (window.__mockCalls ??= []).push({ key: `${method.toUpperCase()} ${path}`, outcome, at: Date.now() });
@@ -148,6 +168,7 @@ export const createFaultInjector = ({ rate, seed, spare = [/^\/mock\//], isWrite
     if (typeof window !== 'undefined') {
       const logged: InjectedFault = { method: method.toUpperCase(), path, status: fault.status, at: Date.now() };
       if (isWrite) logged.write = isWrite(method, path);
+      if (delivered) logged.deliveredAt = logged.at;
       (window.__mockFaults ??= []).push(logged);
     }
     return fault;

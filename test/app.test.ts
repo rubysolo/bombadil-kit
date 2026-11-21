@@ -75,6 +75,20 @@ test('createFaultInjector: isWrite fills `write`; without it there is none', () 
   }
 });
 
+test('createFaultInjector: `delivered` stamps deliveredAt = at; without it there is none', () => {
+  const g = globalThis as { window?: { __mockFaults?: { at: number; deliveredAt?: number }[] } };
+  g.window = {};
+  try {
+    createFaultInjector({ rate: 1, seed: 1, delivered: true })('POST', '/orders');
+    createFaultInjector({ rate: 1, seed: 1 })('POST', '/orders');
+    const [now, later] = g.window.__mockFaults!;
+    assert.equal(now!.deliveredAt, now!.at);
+    assert.ok(!('deliveredAt' in later!));
+  } finally {
+    delete g.window;
+  }
+});
+
 test('createFaultInjector: logs every call on window.__mockCalls, ok or error', () => {
   const g = globalThis as { window?: { __mockCalls?: { key: string; outcome: string; at: number }[] } };
   g.window = {};
@@ -105,6 +119,17 @@ test('withFaults: passes isWrite to the injector', async () => {
   try {
     await withFaults(ok, { VITE_MOCK_FAULT_RATE: '1' }, { isWrite: () => true })('/orders', api, {});
     assert.equal(g.window.__mockFaults![0]!.write, true);
+  } finally {
+    delete g.window;
+  }
+});
+
+test('withFaults: answers with the fault at once, so it logs deliveredAt', async () => {
+  const g = globalThis as { window?: { __mockFaults?: { at: number; deliveredAt?: number }[] } };
+  g.window = {};
+  try {
+    await withFaults(ok, { VITE_MOCK_FAULT_RATE: '1' })('/orders', api, {});
+    assert.equal(g.window.__mockFaults![0]!.deliveredAt, g.window.__mockFaults![0]!.at);
   } finally {
     delete g.window;
   }

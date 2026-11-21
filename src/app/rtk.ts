@@ -41,7 +41,8 @@ export const withFaults = <BaseQuery extends AnyFaultableBaseQuery>(
 ): BaseQuery => {
   const config = parseFaultConfig(env);
   if (!config) return baseQuery;
-  const inject = createFaultInjector({ ...config, ...(spare ? { spare } : {}), ...(isWrite ? { isWrite } : {}) });
+  // It answers with the fault right here, so the fault is delivered when logged.
+  const inject = createFaultInjector({ ...config, delivered: true, ...(spare ? { spare } : {}), ...(isWrite ? { isWrite } : {}) });
   const wrapped = (args: string | FetchArgs, api: BaseQueryApi, extraOptions: unknown) => {
     const { method, path } = requestOf(args);
     const fault = inject(method, path) as FetchBaseQueryError | undefined;

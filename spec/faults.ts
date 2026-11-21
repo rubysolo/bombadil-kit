@@ -41,8 +41,12 @@ export const spinnerDeadline = (faults: readonly InjectedFault[], now: number, w
 
 /** What failedWritesShown remembers across states, on the page's `window`: a page load starts it over, with __mockFaults. */
 export interface WriteWatch {
-  /** Failed writes not yet told: the history entry they're owed an alert on, and since when. */
-  pending: { fault: InjectedFault; entry: number; since: number }[];
+  /**
+   * Failed writes not yet told: the history entry they're owed an alert on,
+   * since when (`deliveredAt`, or when first seen), and until when leaving
+   * that entry drops it instead (absent: never).
+   */
+  pending: { fault: InjectedFault; entry: number; since: number; leaveBy?: number }[];
   /** Every failed write already taken up, so each is owed one alert, not one per state. */
   seen: { has(f: InjectedFault): boolean; add(f: InjectedFault): unknown };
 }
@@ -50,13 +54,22 @@ export interface WriteWatch {
 /** How a fault reads in a finding: `POST /orders → 500`. */
 export const faultLine = (f: InjectedFault) => `${f.method} ${f.path} → ${String(f.status)}`;
 
+/** When a failed request's error reached the app: `deliveredAt` if the mock layer knows it, else `at`. */
+export const deliveredAt = (f: InjectedFault) => f.deliveredAt ?? f.at;
+
 /**
  * failedWritesShown, for one captured state. A failed write (fresh, not
  * `quiet`, an error) is owed an alert on the history entry the walker is on
  * when it's first seen: where the user is when the failure lands. An alert
- * there settles it. Leaving that entry first, or `within` ms passing, makes
- * it unannounced: returns the fault, once. An alert on another page doesn't
- * count; that's how a write that fails silently hid behind an unrelated error.
+ * there settles it. `within` ms passing, or leaving that entry, makes it
+ * unannounced: returns the fault, once. Leaving before the error could have
+ * reached the app drops it instead: before `deliveredAt` when the fault has
+ * one, else within `leaveGrace` ms of when it was first seen (a mock layer
+ * may log the fault when the call starts and answer after a delay; a walker
+ * that clicks away right after Save is gone by then). `within` counts from
+ * `deliveredAt`, else from first seen. An alert on another page doesn't
+ * count; that's how a write that fails silently hid behind an unrelated
+ * error.
  */
 export const unannouncedWrite = (
   watch: WriteWatch,
@@ -67,13 +80,18 @@ export const unannouncedWrite = (
   alertShown: boolean,
   within = 5000,
   fresh = 1500,
+  leaveGrace = 1000,
 ): InjectedFault | null => {
   for (const f of faults) {
-    if (watch.seen.has(f) || !isErrorFault(f) || !isWriteFault(f) || now - f.at >= fresh) continue;
+    if (watch.seen.has(f) || !isErrorFault(f) || !isWriteFault(f) || now - deliveredAt(f) >= fresh) continue;
     watch.seen.add(f);
-    if (!quiet.some((q) => q.test(`${f.method} ${f.path}`))) watch.pending.push({ fault: f, entry, since: now });
+    if (quiet.some((q) => q.test(`${f.method} ${f.path}`))) continue;
+    const since = f.deliveredAt ?? now;
+    watch.pending.push({ fault: f, entry, since, leaveBy: f.deliveredAt ?? now + leaveGrace });
   }
   if (alertShown) watch.pending = watch.pending.filter((p) => p.entry !== entry);
+  // Left before the error could have reached the app: nothing was owed.
+  watch.pending = watch.pending.filter((p) => p.entry === entry || p.leaveBy === undefined || now >= p.leaveBy);
   const late = watch.pending.find((p) => p.entry !== entry || now - p.since > within);
   if (!late) return null;
   watch.pending = watch.pending.filter((p) => p !== late);
@@ -98,8 +116,8 @@ export const requestPattern = (method: string, path: string) =>
 
 /**
  * consoleQuietUnlessFaulted's excuse: a fault that may still be making the app
- * log. An error for `grace` ms after it; a slow response until `grace` ms
- * after it answers; a hang for `hangGrace` ms after it started (a hung
+ * log. An error for `grace` ms after it reached the app (`deliveredAt`); a
+ * slow response until `grace` ms after it answers; a hang for `hangGrace` ms after it started (a hung
  * request logs nothing by itself, and the app's timeout, if any, lands in
  * that window).
  */
@@ -111,7 +129,7 @@ export const faultInFlight = (faults: readonly InjectedFault[], now: number, gra
       case 'slow':
         return now - f.at < (f.delayMs ?? 0) + grace;
       default:
-        return now - f.at < grace;
+        return now - deliveredAt(f) < grace;
     }
   });
 
