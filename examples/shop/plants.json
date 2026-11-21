@@ -11,6 +11,7 @@
   "noisy": { "property": "noConsoleErrorsUnlessFaulted", "flow": "explore" },
   "overlap": { "property": "noTextOverLogo", "flow": "explore" },
   "blank": { "property": "appRenders", "flow": "explore" },
+  "empty": { "property": "noBlankPages", "flow": "explore" },
   "throw": { "property": "noUncaughtExceptions", "flow": "buy" },
   "reject": { "property": "noUnhandledPromiseRejections", "flow": "buy", "faults": 0.5 }
 }

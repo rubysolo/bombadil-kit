@@ -5,6 +5,7 @@ import {
   consoleQuietUnlessFaulted,
   errorBoundaryNeverShown,
   failedWritesShown,
+  noBlankPage,
   noLeakedText,
   noSidewaysScroll,
   nothingUnder,
@@ -22,3 +23,6 @@ export const failedWritesAreShown = failedWritesShown({ errorSelector: '[role="a
 export const noConsoleErrorsUnlessFaulted = consoleQuietUnlessFaulted({ injected: new RegExp(INJECTED_MARKER) });
 export const noTextOverLogo = nothingUnder({ selector: 'header img', container: 'header' });
 export const appRenders = renders({ root: '#root' });
+// No lazy routes here, so nothing harmless to wait out: a clean sweep's
+// longest blank stretch is 0ms, and the walker leaves a blank cart in 100-550ms.
+export const noBlankPages = noBlankPage({ minMs: 50 });

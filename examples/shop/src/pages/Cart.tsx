@@ -13,6 +13,7 @@ export const Cart = () => {
 
   if (isLoading) return <Spinner />;
   if (error || !data) return <ErrorNote error={error} retry={refetch} />;
+  if (planted('empty')) return null;
 
   const onRemove = (productId: string) =>
     remove(productId)
