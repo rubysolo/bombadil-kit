@@ -156,4 +156,3 @@ test('repro.replay rides along with the run, and a run without it is as before',
   assert.ok(!('replay' in older.repro));
 });
 
-});
