@@ -66,9 +66,11 @@ export interface WriteWatch {
   /**
    * Failed writes not yet told: the history entry they're owed an alert on,
    * since when (`deliveredAt`, or when first seen), and until when leaving
-   * that entry drops it instead (absent: never).
+   * that entry drops it instead (absent: never). `delivered`: the fault has a
+   * `deliveredAt`, so leaving drops it until a state on its entry is captured
+   * at or after `leaveBy`, whenever the next page is first captured.
    */
-  pending: { fault: InjectedFault; entry: number; since: number; leaveBy?: number }[];
+  pending: { fault: InjectedFault; entry: number; since: number; leaveBy?: number; delivered?: boolean }[];
   /** Every failed write already taken up, so each is owed one alert, not one per state. */
   seen: { has(f: InjectedFault): boolean; add(f: InjectedFault): unknown };
 }
@@ -85,8 +87,10 @@ export const deliveredAt = (f: InjectedFault) => f.deliveredAt ?? f.at;
  * when it's first seen: where the user is when the failure lands. An alert
  * there settles it. `within` ms passing, or leaving that entry, makes it
  * unannounced: returns the fault, once. Leaving before the error could have
- * reached the app drops it instead: before `deliveredAt` when the fault has
- * one, else within `leaveGrace` ms of when it was first seen (a mock layer
+ * reached the app drops it instead: with no state on its page captured at or
+ * after `deliveredAt` when the fault has one (the walker leaves between two
+ * captures, and the next page's first one can come after delivery), else
+ * within `leaveGrace` ms of when it was first seen (a mock layer
  * may log the fault when the call starts and answer after a delay; a walker
  * that clicks away right after Save is gone by then). `within` counts from
  * `deliveredAt`, else from first seen. An alert on another page doesn't
@@ -109,11 +113,17 @@ export const unannouncedWrite = (
     watch.seen.add(f);
     if (quiet.some((q) => q.test(`${f.method} ${f.path}`))) continue;
     const since = f.deliveredAt ?? now;
-    watch.pending.push({ fault: f, entry, since, leaveBy: f.deliveredAt ?? now + leaveGrace });
+    watch.pending.push(
+      f.deliveredAt === undefined
+        ? { fault: f, entry, since, leaveBy: now + leaveGrace }
+        : { fault: f, entry, since, leaveBy: f.deliveredAt, delivered: true },
+    );
   }
+  // Captured on its page after the error landed: the walker saw it, so it's owed.
+  for (const p of watch.pending) if (p.delivered && p.entry === entry && p.leaveBy !== undefined && now >= p.leaveBy) delete p.leaveBy;
   if (alertShown) watch.pending = watch.pending.filter((p) => p.entry !== entry);
   // Left before the error could have reached the app: nothing was owed.
-  watch.pending = watch.pending.filter((p) => p.entry === entry || p.leaveBy === undefined || now >= p.leaveBy);
+  watch.pending = watch.pending.filter((p) => p.entry === entry || p.leaveBy === undefined || (!p.delivered && now >= p.leaveBy));
   const late = watch.pending.find((p) => p.entry !== entry || now - p.since > within);
   if (!late) return null;
   watch.pending = watch.pending.filter((p) => p !== late);
