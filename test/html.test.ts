@@ -78,3 +78,39 @@ test('the coverage tab has no API section when no run had api data', () => {
   assert.match(page, /class="routes"/);
   assert.doesNotMatch(page, /API coverage/);
 });
+
+const withMilestones = (milestones?: Report['projects'][number]['milestones']) => {
+  const r = project();
+  return { ...r, projects: [{ ...r.projects[0]!, ...(milestones ? { milestones } : {}) }] } as Report;
+};
+
+test('the milestones tab: expected ones with a sweep strip, missed ones highlighted, undeclared listed apart', () => {
+  const r = withMilestones([
+    {
+      flow: 'account-save',
+      sweep: 4,
+      runs: 2,
+      recorded: true,
+      expected: [
+        { name: 'saved', reached: 3, history: [{ sweep: 3, reached: 0 }, { sweep: 4, reached: 3 }] },
+        { name: '<persisted>', reached: 0, history: [{ sweep: 3, reached: 1 }, { sweep: 4, reached: 0 }] },
+      ],
+      missed: ['<persisted>'],
+      undeclared: [{ name: 'signedOut', reached: 1 }],
+    },
+    { flow: 'browse', sweep: 4, runs: 1, recorded: false, expected: [{ name: 'found', reached: 0, history: [{ sweep: 4, reached: 0 }] }], missed: ['found'], undeclared: [] },
+  ]);
+  assert.match(rendered(r, '#/p/web'), /href="#\/p\/web\/milestones">MILESTONES 1\/3</);
+  const page = rendered(r, '#/p/web/milestones');
+  assert.match(page, /<h2>account-save<\/h2><span[^>]*>1\/2 expected reached · sweep 4 · 2 runs/);
+  assert.match(page, /<tr class="milestone"><td><b>saved<\/b><\/td><td><span class="g">3×<\/span><\/td><td class="strip"[^>]*><span class="sq" title="sweep 3: 0×"><\/span><span class="sq on" title="sweep 4: 3×">/);
+  assert.match(page, /<tr class="milestone missed"><td><b>&lt;persisted&gt;<\/b><\/td><td>not reached<\/td>/);
+  assert.match(page, /reached, not declared<\/span><span>signedOut <span class="dim">1×/);
+  assert.match(page, /<h2>browse<\/h2>[\s\S]*Its spec records no milestones/);
+});
+
+test('no milestones tab without milestone data', () => {
+  const page = rendered(withMilestones(), '#/p/web');
+  assert.doesNotMatch(page, /MILESTONES/);
+  assert.match(rendered(withMilestones(), '#/p/web/milestones'), /RUN \(LATEST SWEEP\)/, 'an unknown tab falls back to sweeps');
+});

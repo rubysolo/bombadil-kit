@@ -45,3 +45,8 @@ test('apiCalls, called and not exported, is not listed as a property', () => {
   const spec = "import { apiCalls, spinnersClear } from 'bombadil-kit/spec';\napiCalls();\nexport const spins = spinnersClear();\n";
   assert.deepEqual(specProperties(spec), ['spins']);
 });
+
+test('milestones, called and not exported, is not listed as a property', () => {
+  const spec = "import { milestones, spinnersClear } from 'bombadil-kit/spec';\nmilestones({ saved: (doc) => !!doc.querySelector('.ok') });\nexport const spins = spinnersClear();\n";
+  assert.deepEqual(specProperties(spec), ['spins']);
+});

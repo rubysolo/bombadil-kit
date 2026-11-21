@@ -6,7 +6,7 @@ import type { Report } from './report.ts';
  * renders report.json, which is embedded in it. Hash routes:
  *
  *   #/                    repo: stats, property matrix, cases by status
- *   #/p/<project>[/tab]   project: cases | coverage | sweeps
+ *   #/p/<project>[/tab]   project: cases | coverage | milestones | sweeps
  *   #/f/<id>[/json]       one case, as a person reads it or as JSON
  */
 
@@ -34,7 +34,7 @@ ${CLIENT}</script>
 
 const CSS = `
 :root{--bg:#02060B;--panel:rgba(0,16,26,.78);--line:rgba(0,229,255,.28);--line2:rgba(0,229,255,.12);
---c:#00E5FF;--m:#FF2BD6;--g:#39FF88;--t:#CFEFFF;--dim:#7E9BAE;--white:#FFFFFF}
+--c:#00E5FF;--m:#FF2BD6;--g:#39FF88;--y:#FFC53D;--t:#CFEFFF;--dim:#7E9BAE;--white:#FFFFFF}
 *{box-sizing:border-box}
 body{margin:0;background-color:var(--bg);color:var(--t);font:13px/1.55 "JetBrains Mono",ui-monospace,SFMono-Regular,Menlo,monospace;
 background-image:linear-gradient(rgba(0,229,255,.07) 1px,transparent 1px),linear-gradient(90deg,rgba(0,229,255,.07) 1px,transparent 1px),
@@ -48,7 +48,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--c);outline-offset:2
 .crumbs .here{color:var(--white);text-shadow:0 0 14px rgba(0,229,255,.6)}
 .led{width:10px;height:10px;border-radius:50%;background:var(--g);box-shadow:0 0 10px var(--g)}
 .led.bad{background:var(--m);box-shadow:0 0 10px var(--m)}
-.dim{color:var(--dim)}.m{color:var(--m)}.g{color:var(--g)}.c{color:var(--c)}.w{color:var(--white)}
+.dim{color:var(--dim)}.y{color:var(--y)}.m{color:var(--m)}.g{color:var(--g)}.c{color:var(--c)}.w{color:var(--white)}
 .panel{position:relative;border:1px solid var(--line);background:var(--panel)}
 .panel.pad{padding:14px 16px}
 .panel h2,.h{margin:0;font:700 16px/1.3 Rajdhani,"Barlow Condensed","Arial Narrow",sans-serif;letter-spacing:.24em;color:var(--c);text-transform:uppercase}
@@ -99,7 +99,9 @@ td.cell{text-align:center}
 .route.bad{border-color:var(--m);background:rgba(255,43,214,.16);box-shadow:0 0 14px rgba(255,43,214,.4);color:var(--white)}
 .route.none{border:1px dashed #2F4656;box-shadow:none;color:var(--dim)}
 .route small{font-size:11px;opacity:.85}
-.head.api{border-top:1px solid var(--line2)}tr.endpoint.none td{color:var(--dim);opacity:.6}tr.endpoint b{font-weight:600;overflow-wrap:anywhere}
+.head.api,.head.flow{border-top:1px solid var(--line2)}.head.flow:first-child{border-top:0}
+tr.milestone b{font-weight:600;overflow-wrap:anywhere}tr.milestone.missed td{color:var(--y);background:rgba(255,197,61,.08)}tr.milestone.missed td:first-child{box-shadow:inset 3px 0 0 var(--y)}
+.strip .sq{margin-right:2px}tr.endpoint.none td{color:var(--dim);opacity:.6}tr.endpoint b{font-weight:600;overflow-wrap:anywhere}
 .chart{display:flex;align-items:flex-end;gap:12px;height:170px;padding:16px 16px 6px;border-bottom:1px solid var(--line2)}
 .chart div{flex:1;display:flex;flex-direction:column;align-items:center;justify-content:flex-end;gap:6px;height:100%;min-width:0}
 .chart i{display:block;width:100%;max-width:46px;background:rgba(0,229,255,.55);box-shadow:0 0 10px rgba(0,229,255,.4)}
@@ -234,13 +236,35 @@ function apiSection(api) {
     '<div class="empty">Dimmed endpoints were never called: no flow reached the page that calls them. The inventory is window.__mockEndpoints.</div>';
 }
 
+// Per flow, the milestones it expects (reached in its latest sweep or not, and a strip of sweeps before), then the ones it reached undeclared.
+function milestonesSection(flows) {
+  return flows.map((m) => {
+    const got = m.expected.length - m.missed.length;
+    const head = '<div class="head flow"><h2>' + esc(m.flow) + '</h2><span class="dim" style="font-size:12px">' +
+      (m.expected.length ? got + '/' + m.expected.length + ' expected reached' : 'none expected') + ' · sweep ' + m.sweep + ' · ' + m.runs + (m.runs === 1 ? ' run' : ' runs') + '</span></div>';
+    const note = m.recorded ? '' : '<div class="empty y">Its spec records no milestones: call milestones({ … }) in it.</div>';
+    const rows = m.expected.map((e) => '<tr class="milestone' + (e.reached ? '' : ' missed') + '"><td><b>' + esc(e.name) + '</b></td><td>' +
+      (e.reached ? '<span class="g">' + e.reached.toLocaleString('en-US') + '×</span>' : 'not reached') + '</td>' +
+      '<td class="strip" style="--k:var(--g)">' + e.history.map((h) => '<span class="sq' + (h.reached ? ' on' : '') + '" title="sweep ' + h.sweep + ': ' + h.reached + '×"></span>').join('') + '</td></tr>').join('');
+    const table = rows ? '<div class="scroll"><table><thead><tr><th>EXPECTED</th><th>LATEST SWEEP</th><th>SWEEPS</th></tr></thead><tbody>' + rows + '</tbody></table></div>' : '';
+    const extra = m.undeclared.length
+      ? '<div class="row undeclared"><span class="dim">reached, not declared</span><span>' + m.undeclared.map((u) => esc(u.name) + ' <span class="dim">' + u.reached.toLocaleString('en-US') + '×</span>').join(' · ') + '</span></div>'
+      : '';
+    return head + note + table + extra;
+  }).join('') +
+    '<div class="empty">Highlighted milestones were expected but not reached in the flow\'s latest sweep: a prompt to improve the flow (its start, fence, fixtures) or its actions, not a finding. flows.json says which milestones a flow expects.</div>';
+}
+
 function project(name, tab) {
   const p = byProject(name);
   if (!p) return header(home, '') + '<div class="panel pad">No project ' + esc(name) + '</div>';
   const mine = R.findings.filter((f) => f.project === name);
   const openRoutes = new Set(mine.filter(isOpen).map((f) => f.route));
   tab = tab || 'cases';
-  const tabs = [['cases', 'CASES ' + mine.length], ['coverage', 'COVERAGE ' + p.routes.filter((r) => r.states > 0).length + '/' + p.routes.length], ['sweeps', 'SWEEPS ' + p.history.length]]
+  const expected = (p.milestones || []).flatMap((m) => m.expected);
+  const tabs = [['cases', 'CASES ' + mine.length], ['coverage', 'COVERAGE ' + p.routes.filter((r) => r.states > 0).length + '/' + p.routes.length]]
+    .concat(p.milestones ? [['milestones', 'MILESTONES ' + expected.filter((e) => e.reached).length + '/' + expected.length]] : [])
+    .concat([['sweeps', 'SWEEPS ' + p.history.length]])
     .map(([id, label]) => '<a role="tab" class="' + (tab === id ? 'on' : '') + '" href="#/p/' + enc(name) + '/' + id + '">' + label + '</a>').join('');
   let body = '';
   if (tab === 'cases') {
@@ -258,6 +282,8 @@ function project(name, tab) {
       (r.states ? r.states.toLocaleString('en-US') + ' states' : 'never reached') + (r.known ? '' : ' · not in routes.json') + '</small></div>').join('') + '</div>' +
       '<div class="empty">Dashed routes were never reached: give the fuzzer a fixture or a start URL for them. Routes come from routes.json beside the spec.</div>' +
       apiSection(p.api);
+  } else if (tab === 'milestones' && p.milestones) {
+    body = milestonesSection(p.milestones);
   } else {
     const max = Math.max(1, ...p.history.map((h) => h.findings));
     body = '<div class="chart">' + p.history.map((h, i) =>

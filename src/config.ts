@@ -82,6 +82,11 @@ export interface Flow {
   signedIn?: boolean;
   /** Spec name (without .ts) in the specs folder; default the project's `spec`. */
   spec?: string;
+  /**
+   * Milestones (the spec's `milestones({...})` names) this flow is meant to
+   * reach. The report flags one a sweep never reached; it isn't a finding.
+   */
+  milestones?: string[];
 }
 
 export const CONFIG_FILE = 'bombadil-kit.json';

@@ -99,3 +99,43 @@ test('buildReport lists API endpoints per project: inventory first, unreached on
   const plain = buildReport(applySweep(emptyState(), [run('r1', [])], 't1'), {}, { generatedAt: 'now', evidence: () => [] });
   assert.ok(!('api' in plain.projects[0]!), 'no api data, no api field');
 });
+
+test('buildReport shows per flow its expected milestones (reached, history), the missed ones and the undeclared', () => {
+  const r = (id: string, flow: string, milestones: Record<string, number> | undefined, expected: string[]): RunResult => {
+    const base = run(id, []);
+    return { ...base, meta: { ...base.meta, flow, expected_milestones: expected }, ...(milestones ? { milestones } : {}) };
+  };
+  let s = emptyState();
+  s = applySweep(s, [r('r1', 'save', { saved: 1, persisted: 1 }, ['saved', 'persisted'])], 't1');
+  s = applySweep(s, [r('r2', 'save', { saved: 2, signedOut: 1 }, ['saved', 'persisted']), r('r3', 'browse', undefined, ['found'])], 't2');
+  const report = buildReport(s, {}, { generatedAt: 'now', evidence: () => [] });
+  assert.deepEqual(report.projects[0]!.milestones, [
+    {
+      flow: 'save',
+      sweep: 2,
+      runs: 1,
+      recorded: true,
+      expected: [
+        { name: 'saved', reached: 2, history: [{ sweep: 1, reached: 1 }, { sweep: 2, reached: 2 }] },
+        { name: 'persisted', reached: 0, history: [{ sweep: 1, reached: 1 }, { sweep: 2, reached: 0 }] },
+      ],
+      missed: ['persisted'],
+      undeclared: [{ name: 'signedOut', reached: 1 }],
+    },
+    {
+      flow: 'browse',
+      sweep: 2,
+      runs: 1,
+      recorded: false,
+      expected: [{ name: 'found', reached: 0, history: [{ sweep: 2, reached: 0 }] }],
+      missed: ['found'],
+      undeclared: [],
+    },
+  ]);
+  // A missed milestone is not a finding.
+  assert.deepEqual(report.findings, []);
+  assert.equal(report.summary.new, 0);
+
+  const plain = buildReport(applySweep(emptyState(), [run('r1', [])], 't1'), {}, { generatedAt: 'now', evidence: () => [] });
+  assert.ok(!('milestones' in plain.projects[0]!), 'no milestones, no milestones field');
+});

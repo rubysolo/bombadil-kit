@@ -16,7 +16,7 @@ npx bombadil-kit run               # a plain sweep; report in tmp/bombadil/repor
 ```
 
 `check.mjs` reads `tmp/bombadil/report/report.json`, not just the exit code.
-`TIME` and `SEED` override the sweep's (30s, seed 1).
+`TIME`, `SEED` and `PORT` override the sweep's (30s, seed 1, 5199).
 
 | file | |
 |---|---|

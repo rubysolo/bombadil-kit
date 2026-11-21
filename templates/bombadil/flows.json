@@ -13,6 +13,7 @@
     "start": "/cart",
     "allow": ["/cart*", "/checkout*", "/orders/*"],
     "signedIn": true,
-    "spec": "flow"
+    "spec": "flow",
+    "milestones": ["ordered"]
   }
 ]

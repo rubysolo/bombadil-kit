@@ -44,9 +44,12 @@ import {
 } from './faults.ts';
 import { hasSettled, persist, spinnerTime, type Persisted, type PersistStore, type SpinnerStore } from './settled.ts';
 import { freshApiCalls, type ApiSnapshot, type ApiWindow, type CallOutcome, type MockCall, type MockEndpoint } from './api.ts';
+import { reachedMilestones, type MilestonePredicate } from './milestones.ts';
 
 export {
   freshApiCalls,
+  reachedMilestones,
+  type MilestonePredicate,
   type ApiSnapshot,
   type CallOutcome,
   type MockCall,
@@ -391,6 +394,29 @@ export const apiCalls = () => {
   const named = api as typeof api & { named?: (name: string) => unknown };
   if (typeof named.named === 'function') named.named('api');
   return api;
+};
+
+/**
+ * Not a property: records, as the `milestones` snapshot, the milestones each
+ * state reached: the names whose predicate turned true (once while it stays
+ * true; again after it went false and back; a new document starts over). The
+ * report counts them per flow, against the `milestones` its flows.json entry
+ * expects. Call it once at the top level of the spec, unexported, like
+ * apiCalls:
+ *
+ *   milestones({
+ *     saved: (doc) => !!doc.querySelector('[role="status"].success'),
+ *   });
+ *
+ * A milestone is where the workflow got done, not where it went: a page
+ * reached is route coverage; a save dispatched isn't a save that completed.
+ */
+export const milestones = (defs: Record<string, MilestonePredicate>) => {
+  const reached = extract((state) => reachedMilestones(defs, state.document, state.window));
+  // The report reads the snapshot by this name (see apiCalls).
+  const named = reached as typeof reached & { named?: (name: string) => unknown };
+  if (typeof named.named === 'function') named.named('milestones');
+  return reached;
 };
 
 // ------------------------------------------------------------------- actions

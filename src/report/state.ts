@@ -48,6 +48,21 @@ export interface FindingRecord {
   last: Occurrence;
 }
 
+/** One flow's milestones: what it expects, and what each sweep it ran in reached. */
+export interface FlowMilestones {
+  /** flows.json's `milestones` for the flow, as of its latest run. */
+  expected: string[];
+  /** Per sweep the flow ran in, oldest first. */
+  sweeps: {
+    sweep: number;
+    runs: number;
+    /** Whether any of those runs' specs called `milestones()`. */
+    recorded: boolean;
+    /** Times each milestone was reached, over those runs. */
+    reached: Record<string, number>;
+  }[];
+}
+
 /** What the report shows per run, kept so it outlives the run's directory. */
 export interface RunInfo {
   sweep: number;
@@ -69,6 +84,8 @@ export interface State {
   coverage: Record<string, Record<string, string[]>>;
   /** Per project, per flow: the mock API calls its runs made (absent in state from before it, and for specs without `api`). */
   api?: Record<string, Record<string, ApiCoverage>>;
+  /** Per project, per flow: milestones expected and reached (absent in state from before it, and for flows with neither). */
+  milestones?: Record<string, Record<string, FlowMilestones>>;
 }
 
 const union = (a: string[] = [], b: string[] = []) => [...new Set([...a, ...b])].sort();
@@ -97,6 +114,7 @@ export const applySweep = (state: State, runs: readonly RunResult[], at: string)
   const findings: Record<string, FindingRecord> = structuredClone(state.findings);
   const coverage: State['coverage'] = structuredClone(state.coverage ?? {});
   const api: NonNullable<State['api']> = structuredClone(state.api ?? {});
+  const milestones: NonNullable<State['milestones']> = structuredClone(state.milestones ?? {});
 
   for (const run of fresh) {
     const p = (projects[run.meta.project] ??= { runs: [], actions: 0, routes: {} });
@@ -109,6 +127,16 @@ export const applySweep = (state: State, runs: readonly RunResult[], at: string)
     if (run.api) {
       const calls = (api[run.meta.project] ??= {});
       calls[flow] = mergeApi(calls[flow], run.api);
+    }
+    const expected = run.meta.expected_milestones ?? [];
+    if (run.milestones || expected.length) {
+      const m = ((milestones[run.meta.project] ??= {})[flow] ??= { expected: [], sweeps: [] });
+      m.expected = [...expected];
+      let s = m.sweeps.at(-1);
+      if (s?.sweep !== id) m.sweeps.push((s = { sweep: id, runs: 0, recorded: false, reached: {} }));
+      s.runs += 1;
+      if (run.milestones) s.recorded = true;
+      for (const [name, n] of Object.entries(run.milestones ?? {})) s.reached[name] = (s.reached[name] ?? 0) + n;
     }
 
     for (const f of run.findings) {
@@ -142,6 +170,7 @@ export const applySweep = (state: State, runs: readonly RunResult[], at: string)
     findings,
     coverage,
     ...(Object.keys(api).length ? { api } : {}),
+    ...(Object.keys(milestones).length ? { milestones } : {}),
   };
 };
 

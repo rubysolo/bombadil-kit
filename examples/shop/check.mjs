@@ -8,7 +8,10 @@
 // reliably catch it yet. It's reported (fired or not), never failed; drop the
 // note once the kit fixes the gap.
 //
-// TIME (default 30s) and SEED (default 1) override the sweep's. Under CI
+// The clean sweep also prints each flow's expected milestones it missed (a
+// flow that reached its pages without finishing there); that warns, never fails.
+//
+// TIME (default 30s), SEED (default 1) and PORT override the sweep's. Under CI
 // (CI=true, as GitHub Actions sets) Chrome runs without its sandbox: the job's
 // container runs as root.
 import { spawnSync } from 'node:child_process';
@@ -28,6 +31,7 @@ const sweep = (plant) => {
   // excuse what it plants, and noise from it isn't what's being checked.
   const args = ['bombadil-kit', 'run', '--time', time, '--seed', seed, '--faults', String(p ? (p.faults ?? 0) : 0.1)];
   if (p) args.push('--flow', p.flow);
+  if (process.env.PORT) args.push('--port', process.env.PORT);
   if (process.env.CI === 'true') args.push('--no-sandbox');
   console.error(`\n=== ${plant ?? 'clean'}: npx ${args.join(' ')}`);
   const rc = spawnSync('npx', args, {
@@ -40,6 +44,11 @@ const sweep = (plant) => {
   const seen = report.findings.filter((f) => f.sweeps.includes(report.sweep.id));
   const fired = [...new Set(seen.map((f) => f.property))];
   for (const f of seen) console.error(`  ${f.property} on ${f.route}: ${f.summary}`);
+  if (!p) {
+    for (const m of report.projects.flatMap((x) => x.milestones ?? []).filter((m) => m.sweep === report.sweep.id && m.missed.length)) {
+      console.error(`  ~ ${m.flow} never reached ${m.missed.join(', ')}`);
+    }
+  }
 
   const problems = [];
   if (!p) {
