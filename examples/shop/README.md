@@ -25,7 +25,7 @@ npx bombadil-kit run               # a plain sweep; report in tmp/bombadil/repor
 | `src/main.tsx` | `installFuzzConsole` in fuzz mode |
 | `src/plant.ts` | `planted(name)`: on when `VITE_PLANT` lists it |
 | `bombadil/` | specs, every kit property (`properties.ts`), flows, routes |
-| `plants.json` | plant → the property that must catch it, the flow, `faults` if it needs them |
+| `plants.json` | plant → the property that must catch it, the flow, `faults` and `time` if it needs them |
 
 ## Planted bugs
 
@@ -48,7 +48,10 @@ A plant with `known` in `plants.json` is a gap in the kit, written down: its
 property can't reliably catch it yet, so the check reports whether it fired
 and never fails. Drop the note once the kit closes the gap.
 Plants run without faults unless `plants.json` says otherwise: a fault
-nearby can excuse what's planted.
+nearby can excuse what's planted. They sweep for 30s unless it names a
+`time`. `spinner` needs 1m: `spinnersSettle` adds up spinner time on `/cart`
+across visits, and in 30s on a CI runner the walker spends 2-2.5s there, under
+the shop's 3s.
 
 The kit is linked from the repo root (`file:../..`); `preserveSymlinks` (in
 `tsconfig.json` and `vite.config.ts`) resolves its peers from this app, as an

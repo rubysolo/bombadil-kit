@@ -1,6 +1,6 @@
 {
   "crash": { "property": "noErrorBoundary", "flow": "explore" },
-  "spinner": { "property": "spinnersSettle", "flow": "buy" },
+  "spinner": { "property": "spinnersSettle", "flow": "buy", "time": "1m" },
   "leak": { "property": "noLeakedValues", "flow": "buy" },
   "overflow": { "property": "noHorizontalOverflow", "flow": "explore" },
   "silent-write": { "property": "failedWritesAreShown", "flow": "buy", "faults": 0.5 },

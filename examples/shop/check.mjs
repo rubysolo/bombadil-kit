@@ -11,7 +11,9 @@
 // The clean sweep also prints each flow's expected milestones it missed (a
 // flow that reached its pages without finishing there); that warns, never fails.
 //
-// TIME (default 30s), SEED (default 1) and PORT override the sweep's. Under CI
+// TIME (default 30s, or the plant's `time`), SEED (default 1) and PORT
+// override the sweep's. A plant that needs the walker to dwell somewhere (a
+// spinner tallied up across visits) names a longer `time` in plants.json. Under CI
 // (CI=true, as GitHub Actions sets) Chrome runs without its sandbox: the job's
 // container runs as root.
 import { spawnSync } from 'node:child_process';
@@ -21,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 
 const here = dirname(fileURLToPath(import.meta.url));
 const plants = JSON.parse(readFileSync(join(here, 'plants.json'), 'utf8'));
-const time = process.env.TIME ?? '30s';
+const time = (p) => process.env.TIME ?? p?.time ?? '30s';
 const seed = process.env.SEED ?? '1';
 
 const sweep = (plant) => {
@@ -29,7 +31,7 @@ const sweep = (plant) => {
   if (plant && !p) throw new Error(`no plant ${plant} (have ${Object.keys(plants).join(', ')})`);
   // A plant runs without faults unless it needs them: a fault nearby would
   // excuse what it plants, and noise from it isn't what's being checked.
-  const args = ['bombadil-kit', 'run', '--time', time, '--seed', seed, '--faults', String(p ? (p.faults ?? 0) : 0.1)];
+  const args = ['bombadil-kit', 'run', '--time', time(p), '--seed', seed, '--faults', String(p ? (p.faults ?? 0) : 0.1)];
   if (p) args.push('--flow', p.flow);
   if (process.env.PORT) args.push('--port', process.env.PORT);
   if (process.env.CI === 'true') args.push('--no-sandbox');
