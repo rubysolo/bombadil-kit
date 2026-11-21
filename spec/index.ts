@@ -26,16 +26,28 @@ import {
 // 'faultInFlight' has already been declared").
 import { isVisible, visibleOutside } from './dom.ts';
 import {
+  consoleErrorExcused,
   faultInFlight,
   freshFailedWrite,
   isErrorFault,
   isWriteFault,
   spinnerDeadline,
+  type ConsoleExcuse,
   type FaultKind,
   type InjectedFault,
 } from './faults.ts';
 
-export { faultInFlight, freshFailedWrite, isErrorFault, isWriteFault, spinnerDeadline, type FaultKind, type InjectedFault };
+export {
+  consoleErrorExcused,
+  faultInFlight,
+  freshFailedWrite,
+  isErrorFault,
+  isWriteFault,
+  spinnerDeadline,
+  type ConsoleExcuse,
+  type FaultKind,
+  type InjectedFault,
+};
 
 type FaultWindow = Window & { __mockFaults?: InjectedFault[] };
 type ActionGenerator = ReturnType<typeof actions>;
@@ -121,17 +133,33 @@ export const failedWritesShown = ({
 };
 
 /**
- * Bombadil's noConsoleErrors, except while an injected fault may still be
- * making the app log: `grace` ms after an error, `grace` ms after a slow
- * response answers (`at + delayMs`), `hangGrace` ms after a hang started
- * (default `grace`; raise it to the app's request timeout). The app logs the
- * failures it handles, and failedWritesShown/spinnersClear judge those.
- * Anything else (a React warning, a failed render) still counts.
+ * Bombadil's noConsoleErrors, except for errors an injected fault explains.
+ * The app logs the failures it handles, and failedWritesShown/spinnersClear
+ * judge those. Anything else (a React warning, a failed render) still counts.
+ *
+ * By time (`grace`, or `{ grace, hangGrace }`): any error `grace` ms after an
+ * injected error, `grace` ms after a slow response answers (`at + delayMs`),
+ * `hangGrace` ms after a hang started (default `grace`; raise it to the app's
+ * request timeout).
+ *
+ * By message (`{ injected }`): only an error whose text matches `injected`,
+ * the marker the mock layer puts in what it injects; every other error fails,
+ * whenever it lands. Bombadil records a logged object as `"Object"`, so the
+ * marker inside one is only seen with bombadil-kit/console's
+ * installFuzzConsole. With the built-in injector:
+ *
+ *   import { INJECTED_MARKER } from 'bombadil-kit/faults';
+ *   export const quiet = consoleQuietUnlessFaulted({ injected: new RegExp(INJECTED_MARKER) });
  */
-export const consoleQuietUnlessFaulted = (grace = 5000, hangGrace = grace) => {
-  const faulted = extract((state) => faultInFlight((state.window as FaultWindow).__mockFaults ?? [], Date.now(), grace, hangGrace));
-  const errors = extract((state) => state.console.filter((e) => e.level === 'error').map((e) => e.args));
-  return always(() => errors.current.length === 0 || faulted.current);
+export const consoleQuietUnlessFaulted = (options: number | ConsoleExcuse = 5000, hangGrace?: number) => {
+  const excuse: ConsoleExcuse =
+    typeof options === 'number' ? { grace: options, ...(hangGrace === undefined ? {} : { hangGrace }) } : options;
+  const unexcused = extract((state) => {
+    const faults = (state.window as FaultWindow).__mockFaults ?? [];
+    const now = Date.now();
+    return state.console.filter((e) => e.level === 'error' && !consoleErrorExcused(e.args, faults, now, excuse)).length;
+  });
+  return always(() => unexcused.current === 0);
 };
 
 /**

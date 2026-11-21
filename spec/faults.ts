@@ -57,3 +57,44 @@ export const faultInFlight = (faults: readonly InjectedFault[], now: number, gra
         return now - f.at < grace;
     }
   });
+
+export interface ConsoleExcuse {
+  /** ms an injected error (or a slow answer) excuses console errors for. Default 5000. */
+  grace?: number;
+  /** ms a hang excuses them for, from when it started. Default `grace`. */
+  hangGrace?: number;
+  /**
+   * The marker the mock layer puts in the failures it injects (built-in
+   * faults: `new RegExp(INJECTED_MARKER)`). Given, an error is excused only
+   * if its text matches, whatever the timing; `grace`/`hangGrace` are unused.
+   */
+  injected?: RegExp;
+}
+
+const json = (value: unknown) => {
+  try {
+    return JSON.stringify(value) ?? '';
+  } catch {
+    return '';
+  }
+};
+
+/**
+ * Whether consoleQuietUnlessFaulted lets one console error through. With
+ * `injected`: its text matches, either the first argument (what the report
+ * shows, one string once bombadil-kit/console formats it) or all of them as
+ * JSON. Bombadil records an argument that isn't a string as its class name
+ * (`"Object"`), so a marker inside a logged object or error is only seen
+ * through installFuzzConsole. Without `injected`: faultInFlight.
+ */
+export const consoleErrorExcused = (
+  args: readonly unknown[],
+  faults: readonly InjectedFault[],
+  now: number,
+  { grace = 5000, hangGrace = grace, injected }: ConsoleExcuse = {},
+) => {
+  if (!injected) return faultInFlight(faults, now, grace, hangGrace);
+  const first = typeof args[0] === 'string' ? args[0] : json(args[0]);
+  // search, not test: a /g regex's lastIndex would make test() alternate.
+  return args.length > 0 && (first.search(injected) !== -1 || json(args).search(injected) !== -1);
+};
