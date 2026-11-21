@@ -6,6 +6,7 @@ import {
   consoleQuietUnlessFaulted,
   errorBoundaryNeverShown,
   failedWritesShown,
+  noBlankPage,
   noLeakedText,
   noSidewaysScroll,
   nothingUnder,
@@ -29,3 +30,6 @@ export const noConsoleErrorsUnlessFaulted = consoleQuietUnlessFaulted();
 // Only if a floating header can cover content; delete otherwise.
 export const noTextOverLogo = nothingUnder({ selector: 'header img', container: 'header' });
 export const appRenders = renders({ root: '#root' });
+// A route left with only its header and footer, say after a failed request.
+// minMs: just above the longest `blank` stretch in a clean sweep's trace.
+export const noBlankPages = noBlankPage({ chrome: 'header, footer, nav', minMs: 250 });
