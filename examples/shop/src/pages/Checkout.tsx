@@ -44,7 +44,8 @@ export const Checkout = () => {
       <button type="submit" disabled={placing.isLoading}>
         Place order
       </button>
-      {placing.isError && <ErrorNote error={placing.error} />}
+      {/* Other failures show as a notice (notices.tsx), wherever the user is by then. */}
+      {placing.error && 'status' in placing.error && placing.error.status === 422 && <ErrorNote error={placing.error} />}
     </form>
   );
 };

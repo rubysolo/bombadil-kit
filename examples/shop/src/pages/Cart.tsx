@@ -6,7 +6,7 @@ import { ErrorNote, Spinner, money } from '../ui.tsx';
 
 export const Cart = () => {
   const { data, error, isLoading, refetch } = useCartQuery();
-  const [remove, removing] = useRemoveFromCartMutation();
+  const [remove] = useRemoveFromCartMutation();
   useEffect(() => {
     if (error) console.error('Could not load the cart', error);
   }, [error]);
@@ -44,7 +44,6 @@ export const Cart = () => {
           <Link to="/checkout">Checkout</Link>
         </>
       )}
-      {removing.isError && <ErrorNote error={removing.error} />}
     </>
   );
 };

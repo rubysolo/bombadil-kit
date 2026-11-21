@@ -5,6 +5,7 @@ import { Order } from './pages/Order.tsx';
 import { Product } from './pages/Product.tsx';
 import { Products } from './pages/Products.tsx';
 import { planted } from './plant.ts';
+import { Notices } from './notices.tsx';
 import { ErrorBoundary } from './ui.tsx';
 
 const LOGO =
@@ -21,6 +22,7 @@ export const App = () => (
       </nav>
     </header>
     {planted('overlap') && <p className="promo">Free shipping today</p>}
+    <Notices />
     <main>
       <ErrorBoundary>
         <Routes>

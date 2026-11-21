@@ -6,14 +6,15 @@ import { Provider } from 'react-redux';
 import { BrowserRouter } from 'react-router-dom';
 import { api } from './api.ts';
 import { App } from './App.tsx';
+import { noticeMiddleware, noticesReducer } from './notices.tsx';
 import { planted } from './plant.ts';
 import './style.css';
 
 if (import.meta.env.VITE_FUZZ === 'true') installFuzzConsole();
 
 const store = configureStore({
-  reducer: { [api.reducerPath]: api.reducer },
-  middleware: (m) => m().concat(api.middleware),
+  reducer: { [api.reducerPath]: api.reducer, notices: noticesReducer },
+  middleware: (m) => m().concat(api.middleware, noticeMiddleware),
 });
 
 if (!planted('blank'))

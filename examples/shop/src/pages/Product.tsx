@@ -55,7 +55,6 @@ export const Product = () => {
         Add to cart
       </button>
       {added && <p>Added. <Link to="/cart">Go to cart</Link></p>}
-      {adding.isError && !planted('silent-write') && <ErrorNote error={adding.error} />}
     </article>
   );
 };
