@@ -167,8 +167,10 @@ a form. `flows.json` splits the app into workflows:
   works against a prebuilt bundle, where `server.env` never reaches the app.
 - `allow`: the fence, exact paths or prefixes ending in `*`. Passed to
   Bombadil's `--allow-url` (which only polices full page loads) and to the page
-  in the `fuzz_fence` cookie, which `fenced(...)` reads: outside the fence the
-  only action is Back.
+  in the `fuzz_fence` cookie, which `fenced(...)` and `visits(...)` read:
+  outside the fence the only action is Back. `start` enters a flow once;
+  `visits` deep-links back into its other routes, so one flow covers several
+  without leaving its fence.
 - The run also hands the page `fuzz_seed`, `fuzz_faults` and `fuzz_ref_date`:
   the same values `server.env` is given, for a bundle built before the run and
   so able to read only the URL and the cookies.
@@ -254,6 +256,7 @@ outlived a render cascade. noBlankPage is built from them; so can an app's own
 | `pageClicks({ exclude })` | Bombadil's clicks, minus anything inside `exclude` (default `header`) |
 | `forwardClicks({ label, exclude })` | only Next / Save / Submit / Pay / … buttons, to weight a workflow forward |
 | `fenced(generator)` | `generator`, or only Back outside the flow's fence |
+| `visits([[weight, path], …])` | `visit(path)`, a full same-origin load like a deep link; only paths inside the flow's fence |
 
 `apiCalls()` is not a property: call it once at the top level of the spec,
 unexported (Bombadil refuses an export that isn't a property or an action).

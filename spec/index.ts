@@ -9,7 +9,7 @@
 //   export const spinnersSettle = spinnersClear({ selector: '.spinner' });
 //
 // The runner (`bombadil-kit run`) hands the page cookies these read:
-//   fuzz_fence  the flow's allowed paths (`fenced`)
+//   fuzz_fence  the flow's allowed paths (`fenced`, `visits`)
 //   fuzz_root   the repo's absolute path (`appRenders`, for repo-relative files)
 //   fuzz_app    the app's directory in the repo (`appRenders`, Vite URLs)
 //   fuzz_seed     the run's seed        fuzz_faults  its fault rate
@@ -24,6 +24,7 @@ import {
   extract,
   getFingerprint,
   registerCustomAction,
+  weighted,
   type Fingerprint,
   type State,
 } from '@antithesishq/bombadil/browser';
@@ -51,6 +52,7 @@ import {
 import { hasSettled, persist, spinnerStuck, spinnerTime, type Persisted, type PersistStore, type SpinnerStore } from './settled.ts';
 import { freshApiCalls, type ApiSnapshot, type ApiWindow, type CallOutcome, type MockCall, type MockEndpoint } from './api.ts';
 import { reachedMilestones, type MilestonePredicate } from './milestones.ts';
+import { inFence } from './fence.ts';
 
 export {
   freshApiCalls,
@@ -645,12 +647,22 @@ export const forwardClicks = ({ label = FORWARD, exclude = 'header' } = {}) => {
 // --allow-url only polices full page loads; a client-side router changes the
 // URL without one, so without this a flow wanders off and spends its time
 // elsewhere.
-const outsideFence = extract((state) => {
-  const fence = cookie(state.document, 'fuzz_fence');
-  if (!fence) return false;
-  const path = state.document.location.pathname;
-  return !fence.split(',').some((p) => (p.endsWith('*') ? path.startsWith(p.slice(0, -1)) : path === p));
-});
+const fence = extract((state) => cookie(state.document, 'fuzz_fence'));
+const outsideFence = extract((state) => !inFence(cookie(state.document, 'fuzz_fence'), state.document.location.pathname));
 
 /** `generator`'s actions, or only Back while the page is outside the flow's fence. */
 export const fenced = (generator: ActionGenerator) => actions(() => (outsideFence.current ? ['Back'] : generator.generate()));
+
+/** A full same-origin load of `path`, like following a deep link. */
+export const visit = registerCustomAction('visit', async (_document, window, path: string) => window.location.assign(path));
+
+/**
+ * Deep-link visits, weighted: `visits([[3, '/orders'], [1, '/orders/1']])`.
+ * Only the paths inside the flow's fence are offered, so one flow can re-enter
+ * several of its routes without leaving it.
+ */
+export const visits = (paths: [number, string][]) =>
+  actions(() => {
+    const open = paths.filter(([, path]) => inFence(fence.current, path));
+    return open.length ? weighted(open.map(([w, path]) => [w, visit(path)])).generate() : [];
+  });

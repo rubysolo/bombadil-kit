@@ -62,6 +62,7 @@ test('describeAction gives a short human line for each action kind', () => {
   );
   assert.equal(describeAction({ Click: { fingerprint: { tag: 'input', name_attr: 'email' }, point: { x: 1, y: 2 } } }), 'click input[name=email]');
   assert.equal(describeAction({ Custom: { name: 'fillPlausible', arguments: [2] } }), 'fillPlausible(2)');
+  assert.equal(describeAction({ Custom: { name: 'visit', arguments: ['/orders'] } }), 'visit("/orders")');
   assert.equal(describeAction({ TypeText: { text: 'abc' } }), 'type 3 chars');
   assert.equal(describeAction({ ScrollDown: { distance: 422 } }), 'scroll down 422px');
   assert.equal(describeAction({ PressKey: { code: 13 } }), 'press key 13');

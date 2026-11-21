@@ -10,7 +10,7 @@ export * from './properties.ts';
 
 import { actions, weighted } from '@antithesishq/bombadil/browser';
 import { inputs, navigation, scroll } from '@antithesishq/bombadil/browser/defaults/actions';
-import { fenced, formActions, forwardClicks, pageClicks } from 'bombadil-kit/spec';
+import { fenced, formActions, forwardClicks, pageClicks, visits } from 'bombadil-kit/spec';
 
 const wait = actions(() => ['Wait']);
 
@@ -24,5 +24,8 @@ export const appActions = fenced(
     [2, scroll],
     [1, navigation],
     [1, wait],
+    // Deep links back into the flow's routes. `/` is outside the buy flow's
+    // fence, so it's never offered there.
+    [1, visits([[2, '/cart'], [1, '/products/2'], [1, '/']])],
   ]),
 );
