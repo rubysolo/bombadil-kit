@@ -144,7 +144,7 @@ bundle declare `x` twice, and the spec won't load.
 | factory | holds when |
 |---|---|
 | `errorBoundaryNeverShown(selector)` | the error boundary's fallback never shows |
-| `spinnersClear({ selector, within, exclude })` | a visible loading indicator clears within 15s, plus the `delayMs` of a slow fault still in flight; any hang since the page loaded excuses it. Spinners inside `exclude` (a selector: a modal meant to show 30s of progress) don't count |
+| `spinnersClear({ selector, within, exclude })` | a visible loading indicator clears within 15s, added up across visits to its path until the path shows without one (a walker never stays 15s on a page; a stuck spinner shows on every visit), plus the `delayMs` of a slow fault still in flight; any hang since the page loaded excuses it. Spinners inside `exclude` (a selector: a modal meant to show 30s of progress) don't count |
 | `noLeakedText(pattern?)` | no `undefined`, `NaN`, `[object Object]`, `Invalid Date`, `null` in the text |
 | `noSidewaysScroll(tolerance?)` | the page never scrolls horizontally |
 | `failedWritesShown({ quiet, errorSelector, within })` | a write the fault injector failed shows a visible error on the page the user is on when it fails, within 5s and before they leave; an alert on another page doesn't count, and one alert per write will do (a retry or Dismiss may clear it). Slow and hung writes don't count |
