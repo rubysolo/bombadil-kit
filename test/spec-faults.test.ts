@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { consoleErrorExcused, unexcusedConsoleErrors, faultInFlight, freshFailedWrite, isWriteFault, unannouncedWrite, type InjectedFault, type WriteWatch } from '../spec/faults.ts';
+import { consoleErrorExcused, unexcusedConsoleErrors, faultInFlight, freshFailedWrite, isWriteFault, unannouncedWrite, faultLine, requestPattern, type InjectedFault, type WriteWatch } from '../spec/faults.ts';
 import { FAULTS, INJECTED_MARKER } from '../src/app/faults.ts';
 
 const t = 1_000_000;
@@ -126,6 +126,7 @@ test('unexcusedConsoleErrors: the args of each error not excused, so the report 
 // unannouncedWrite: one watch per page load, states fed in order (`entry`: the history entry).
 const watch = (): WriteWatch => ({ pending: [], seen: new Set() });
 const line = 'POST /orders → 500';
+const lineOf = (f: InjectedFault | null) => (f ? faultLine(f) : null);
 
 test('unannouncedWrite: an alert on the page the failure landed on settles it, once per write', () => {
   const f = fault();
@@ -144,7 +145,7 @@ test('unannouncedWrite: an alert on the page the failure landed on settles it, o
 test('unannouncedWrite: leaving the page before an alert shows there is unannounced, even if the next page has one', () => {
   const w = watch();
   assert.equal(unannouncedWrite(w, [fault()], t + 10, [], 1, false), null);
-  assert.equal(unannouncedWrite(w, [fault()], t + 40, [], 2, true), line);
+  assert.equal(lineOf(unannouncedWrite(w, [fault()], t + 40, [], 2, true)), line);
   // Reported once, not on every state after.
   assert.equal(unannouncedWrite(w, [fault()], t + 80, [], 2, false), null);
 });
@@ -153,7 +154,7 @@ test('unannouncedWrite: no alert within `within` ms on that page is unannounced'
   const w = watch();
   assert.equal(unannouncedWrite(w, [fault()], t + 10, [], 1, false), null);
   assert.equal(unannouncedWrite(w, [fault()], t + 4999, [], 1, false), null);
-  assert.equal(unannouncedWrite(w, [fault()], t + 5011, [], 1, false), line);
+  assert.equal(lineOf(unannouncedWrite(w, [fault()], t + 5011, [], 1, false)), line);
   assert.equal(unannouncedWrite(watch(), [fault()], t + 10, [], 1, false, 100), null);
 });
 
@@ -179,5 +180,26 @@ test('unannouncedWrite: only fresh, unquiet error writes; each one owes its own 
   const b = fault({ path: '/b', at: t + 100 });
   assert.equal(unannouncedWrite(two, [a], t + 10, [], 1, true), null);
   assert.equal(unannouncedWrite(two, [a, b], t + 110, [], 1, false), null);
-  assert.equal(unannouncedWrite(two, [a, b], t + 140, [], 2, false), 'POST /b → 500');
+  assert.equal(lineOf(unannouncedWrite(two, [a, b], t + 140, [], 2, false)), 'POST /b → 500');
+});
+
+test('requestPattern: record segments become :id, endpoint names stay', () => {
+  assert.equal(requestPattern('POST', '/orders/TEST-BASIC-ORDER/design_requests'), 'POST /orders/:id/design_requests');
+  assert.equal(requestPattern('PUT', '/orders/12345/items/9'), 'PUT /orders/:id/items/:id');
+  assert.equal(requestPattern('PATCH', '/users/3f9c2a10-7b1e-4c2d-9a51-0e8f6b7c2d11'), 'PATCH /users/:id');
+  assert.equal(requestPattern('POST', '/orders/P12345/payment'), 'POST /orders/:id/payment');
+  assert.equal(requestPattern('POST', '/api/v2/design_requests'), 'POST /api/v2/design_requests');
+  assert.equal(requestPattern('DELETE', '/session'), 'DELETE /session');
+  assert.equal(requestPattern('REMOTE', 'OrderController.saveOrder'), 'REMOTE OrderController.saveOrder');
+});
+
+test("failedWritesShown's snapshot: one id per endpoint and page, whatever the status or record", async () => {
+  const { detailKey, detailText, findingId } = await import('../src/report/findings.ts');
+  const snap = (f: InjectedFault) => [{ name: 'unannounced', value: { request: requestPattern(f.method, f.path), fault: faultLine(f) } }];
+  const id = (f: InjectedFault) => findingId('app', 'failedWritesAreShown', '/orders/:orderNumber/add-artwork', detailKey(snap(f)));
+  const a = fault({ path: '/orders/TEST-BASIC-ORDER/design_requests', status: 500 });
+  const b = fault({ path: '/orders/TEST-ARTWORK-PENDING/design_requests', status: 'TIMEOUT_ERROR' });
+  assert.equal(id(a), id(b));
+  assert.notEqual(id(a), id(fault({ path: '/orders/TEST-BASIC-ORDER/payment' })));
+  assert.equal(detailText(snap(a)), 'POST /orders/:id/design_requests');
 });
