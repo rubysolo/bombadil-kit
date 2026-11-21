@@ -1,0 +1,204 @@
+# Bombadil fuzzing with bombadil-kit, on GitLab CI. Copy to
+# .gitlab/fuzz.gitlab-ci.yml and `include:` it from .gitlab-ci.yml; adjust the
+# rules:changes paths, the image and the stage.
+#
+# Nightly (a pipeline schedule on the default branch): every flow of every
+# project, 2 minutes each. Its report artifact is the baseline for merge
+# requests: its coverage.json maps source files to the flows that render them,
+# and its state.json is what "new" is measured against.
+#
+# On a merge request: only the flows its changes touch (`bombadil-kit
+# affected`), about 12 minutes in all, reported against the latest nightly.
+# The job fails when the MR's runs find something main's don't, but it is
+# `allow_failure: true`: a fuzzer can be flaky, and a finding is for a person
+# to read before merging.
+#
+# Setup, once per project:
+#  - CI/CD → Schedules: one on the default branch. The rules answer to the
+#    pipeline source, not the clock, so any cron is fine.
+#  - No token: the MR job finds and downloads the nightly with CI_JOB_TOKEN.
+#
+# On the merge request, the report folder is linked as "Bombadil report"
+# (`expose_as`): download it and open index.html, which works from disk. The
+# summary is in the job log, and in the folder as summary.md.
+fuzz:
+  stage: test # adjust to your stages
+  # Playwright's image has Node, a Chromium and its libraries; Bombadil drives
+  # it. Match the version to the repo's Playwright, if it has one, and pick
+  # one whose Node satisfies package.json's engines (the job checks).
+  image: mcr.microsoft.com/playwright:v1.64.1-noble
+  timeout: 45m
+  interruptible: true
+  # `report --fail-on new` exits 1 on a finding the nightly hasn't seen: for a
+  # person to read, not a red pipeline.
+  allow_failure: true
+  variables:
+    GIT_DEPTH: "0" # `affected` diffs against the target branch
+  rules:
+    # The nightly: a pipeline schedule on the default branch.
+    - if: '$CI_PIPELINE_SOURCE == "schedule" && $CI_COMMIT_BRANCH == $CI_DEFAULT_BRANCH'
+    # Merge requests whose changes touch the app.
+    - if: '$CI_PIPELINE_SOURCE == "merge_request_event"'
+      changes:
+        - apps/web/**/* # adjust: the app and the packages it renders
+        - bombadil-kit.json
+        - package-lock.json
+        - .gitlab/fuzz.gitlab-ci.yml
+  script:
+    - |
+      set -euo pipefail
+      nightly=1; [ -n "${CI_MERGE_REQUEST_IID:-}" ] && nightly=0
+      api="$CI_API_V4_URL/projects/$CI_PROJECT_ID"
+      get() { curl -fsSg --header "JOB-TOKEN: $CI_JOB_TOKEN" "$@"; }
+      mkdir -p tmp
+
+      # ---- node and the packages -------------------------------------------
+      # The image's Node. Fail here, plainly, if package.json's engines wants a
+      # newer one than the image has (its lower bound, as in ">=22.18").
+      node -e '
+        const want = (require("./package.json").engines || {}).node;
+        const m = want && want.match(/(\d+)(?:\.(\d+))?/);
+        if (!m) process.exit(0);
+        const [a, b] = process.versions.node.split(".").map(Number);
+        if (a < +m[1] || (a === +m[1] && b < +(m[2] || 0))) {
+          console.error(`package.json wants node ${want}; this image has ${process.version}: pick a newer Playwright image`);
+          process.exit(1);
+        }'
+      # npm. For pnpm, replace this line with
+      #   corepack enable && pnpm install --frozen-lockfile
+      # and `npx bombadil-kit` with `pnpm exec bombadil-kit` below.
+      npm ci --no-audit --no-fund
+
+      # Bombadil finds Chrome through $CHROME before the usual paths, and
+      # doesn't look in /ms-playwright, where the image keeps its Chromium. A
+      # repo with its own Playwright gets the Chromium that matches it.
+      if node -e "require.resolve('playwright-core')" 2> /dev/null; then
+        npx playwright install chromium
+        CHROME="$(node -p "require('playwright-core').chromium.executablePath()")"
+      else
+        CHROME="$(ls -d /ms-playwright/chromium-*/chrome-linux*/chrome | tail -1)"
+      fi
+      export CHROME
+
+      # bombadil-kit.json's `out`: the runs and the report land under it.
+      OUT="$(node -p "require('./bombadil-kit.json').out || 'tmp/bombadil'")"
+
+      # ---- the baseline: the latest nightly's report ------------------------
+      # The nightly is the latest successful *schedule* pipeline on the
+      # default branch, and its report is that pipeline's fuzz artifact.
+      # GitLab 18.4+ lets CI_JOB_TOKEN list pipelines and their jobs. An older
+      # GitLab refuses; then take the fuzz artifact of the latest successful
+      # pipeline on the branch, which is the nightly only if no other pipeline
+      # has succeeded there since.
+      base=tmp/nightly/bombadil-report
+      if [ "$nightly" = 0 ]; then
+        url=""
+        if get "$api/pipelines?ref=$CI_DEFAULT_BRANCH&source=schedule&status=success&per_page=1" > tmp/pipelines.json; then
+          pipeline="$(node -p "(require('./tmp/pipelines.json')[0] || {}).id || ''")"
+          if [ -n "$pipeline" ] && get "$api/pipelines/$pipeline/jobs?scope[]=success&per_page=100" > tmp/jobs.json; then
+            job="$(node -p "(require('./tmp/jobs.json').find((j) => j.name === 'fuzz') || {}).id || ''")"
+            [ -n "$job" ] && url="$api/jobs/$job/artifacts"
+          fi
+        else
+          echo "baseline: this GitLab won't list pipelines for CI_JOB_TOKEN; trying the latest successful $CI_DEFAULT_BRANCH pipeline"
+          url="$api/jobs/artifacts/$CI_DEFAULT_BRANCH/download?job=fuzz"
+        fi
+        if [ -n "$url" ] && get "$url" -o tmp/nightly.zip; then
+          command -v unzip > /dev/null || { apt-get update -qq && apt-get install -y -qq unzip > /dev/null; }
+          unzip -q -o tmp/nightly.zip -d tmp/nightly
+        fi
+        if [ -f "$base/state.json" ]; then
+          echo "baseline: the nightly's report"
+        else
+          echo "baseline: no nightly report to download; every flow runs, and nothing is gated"
+        fi
+      fi
+
+      # ---- pick the flows: `<project> <flow>` per line -----------------------
+      : > tmp/plan.txt
+      : > tmp/affected.txt
+      if [ "$nightly" = 0 ] && [ -f "$base/coverage.json" ]; then
+        npx bombadil-kit affected --all --json --base "origin/$CI_MERGE_REQUEST_TARGET_BRANCH_NAME" \
+          --coverage "$base/coverage.json" > tmp/affected.json 2> tmp/affected.txt \
+          || { cat tmp/affected.txt >&2; exit 1; }
+        cat tmp/affected.txt
+        node -e '
+          for (const [p, r] of Object.entries(require("./tmp/affected.json")))
+            for (const f of r.flows) console.log(`${p} ${f}`);' > tmp/plan.txt
+      else
+        for p in $(node -p "Object.keys(require('./bombadil-kit.json').projects).join(' ')"); do
+          npx bombadil-kit list --project "$p" | awk -v p="$p" '{ print p, $1 }' >> tmp/plan.txt
+        done
+      fi
+      n="$(grep -c . tmp/plan.txt || true)"
+
+      # A merge request gets about 12 minutes over all its flows, whatever
+      # their projects, 1 to 3 minutes each; its number is the seed, so a rerun
+      # of the same MR repeats the same faults.
+      if [ "$nightly" = 0 ]; then
+        per=$(( n > 0 ? 720 / n : 0 )); per=$(( per > 180 ? 180 : per < 60 ? 60 : per ))
+        seed="$CI_MERGE_REQUEST_IID"
+      else
+        per=120; seed="$(od -An -tu4 -N4 /dev/urandom | tr -d ' ')"
+      fi
+      echo "plan: $n flow(s), ${per}s each, seed $seed"
+      if [ "$n" = 0 ]; then echo "no flow is affected: nothing to fuzz"; exit 0; fi
+
+      # ---- fuzz: one sweep per project ---------------------------------------
+      for p in $(cut -d' ' -f1 tmp/plan.txt | sort -u); do
+        flows=()
+        while read -r q f; do
+          if [ "$q" = "$p" ]; then flows+=(--flow "$f"); fi
+        done < tmp/plan.txt
+        # 2 = a property violation; whether it's new is the gate's call.
+        # --no-sandbox: the container runs as root, and Chromium refuses.
+        rc=0
+        npx bombadil-kit run --project "$p" --no-sandbox --time "${per}s" --seed "$seed" "${flows[@]}" || rc=$?
+        [ "$rc" = 0 ] || [ "$rc" = 2 ] || exit "$rc"
+      done
+
+      # ---- the report, and the gate ------------------------------------------
+      # Each `run` rebuilt the report as a sweep of its own, so a finding in
+      # one project would read as "quiet" after the next project's sweep.
+      # Rebuild it from all the runs, on the nightly's state, as one sweep.
+      # Without a nightly every finding is "new": nothing to gate on.
+      rm -rf "$OUT/report"
+      args=(--fail-on none)
+      if [ -f "$base/state.json" ]; then
+        args=(--baseline "$base/state.json" --fail-on "$([ "$nightly" = 0 ] && echo new || echo none)")
+      fi
+      gate=0
+      npx bombadil-kit report "${args[@]}" || gate=$?
+      cp -R "$OUT/report" bombadil-report
+
+      # ---- what happened: the job log, and summary.md in the report ---------
+      {
+        echo "## Bombadil: $n flow(s), ${per}s each, seed $seed"
+        if [ "$nightly" = 0 ] && [ ! -f "$base/state.json" ]; then
+          echo "No nightly report to download: every flow ran, and nothing is gated."
+        fi
+        echo '```'
+        cat tmp/affected.txt
+        echo '```'
+        node -e '
+          const r = require("./bombadil-report/report.json");
+          const s = r.summary;
+          console.log(`**${s.new} new**, ${s.open} open, ${s.quiet} quiet, ${s.closed} closed · ${s.routes[0]}/${s.routes[1]} routes`);
+          for (const f of r.findings.filter((f) => f.status === "new"))
+            console.log(`- \`${f.id}\` ${f.property} on \`${f.route}\`: ${(f.summary.split("\n")[0] || "").slice(0, 140)}`);
+          console.log("\nDownload the Bombadil report artifact and open index.html.");'
+      } > bombadil-report/summary.md
+      cat bombadil-report/summary.md
+      exit "$gate"
+  artifacts:
+    when: always
+    # On the merge request: a "Bombadil report" link to the folder.
+    expose_as: 'Bombadil report'
+    # The nightly's report is the baseline every merge request downloads, so
+    # it outlives GitLab's 30-day default; a merge request's own is what a
+    # person opens. Reports are small.
+    expire_in: 6 weeks
+    paths:
+      # A copy of `<out>/report`, at a path that doesn't depend on the config.
+      # The folder stands alone: index.html opens from disk.
+      - bombadil-report/

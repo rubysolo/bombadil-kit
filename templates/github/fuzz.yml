@@ -62,9 +62,15 @@ jobs:
           npm ci --no-audit --no-fund
       - name: browser
         run: |
-          npx playwright install chromium
-          # Bombadil finds Chrome through $CHROME before the usual paths.
-          echo "CHROME=$(node -p "require('playwright-core').chromium.executablePath()")" >> "$GITHUB_ENV"
+          # Bombadil finds Chrome through $CHROME before the usual paths, and
+          # doesn't look in /ms-playwright, where the image keeps its
+          # Chromium. A repo with its own Playwright gets the one that matches.
+          if node -e "require.resolve('playwright-core')" 2> /dev/null; then
+            npx playwright install chromium
+            echo "CHROME=$(node -p "require('playwright-core').chromium.executablePath()")" >> "$GITHUB_ENV"
+          else
+            echo "CHROME=$(ls -d /ms-playwright/chromium-*/chrome-linux*/chrome | tail -1)" >> "$GITHUB_ENV"
+          fi
 
       # ---- pull requests: the latest nightly is the baseline -------------------
       - name: find the latest nightly
