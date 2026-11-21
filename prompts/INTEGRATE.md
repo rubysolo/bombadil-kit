@@ -94,7 +94,8 @@ the workflows that matter most.
 
 `<dir>/bombadil/routes.json`: the app's route patterns, from its route table
 (`/orders/:id`). The report groups URLs by them and lists the ones never
-reached, which is how you find the next flow.
+reached, which is how you find the next flow. Projects whose specs share a
+folder each point `projects.<name>.routes` at their own list.
 
 ## 6. CI **(ask)**
 

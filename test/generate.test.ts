@@ -1,7 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { generate } from '../src/report/generate.ts';
 import { always, rendering, row, timedOut, tmp, writeRun } from './helpers.ts';
 
@@ -124,4 +126,37 @@ test('a missing baseline is not an error: everything is new', () => {
   failingRun(runs, 'r1');
   const { report } = generate({ runsRoot: runs, out, repoRoot: root, now: 't1', baseline: join(root, 'nope.json') });
   assert.equal(report.summary.new, 2);
+});
+
+test("a project's routes file wins over the routes.json beside its spec", () => {
+  const { root, runs, out } = setup();
+  failingRun(runs, '20261119-192622-s4242');
+  mkdirSync(join(root, 'routes'), { recursive: true });
+  writeFileSync(join(root, 'routes/web.json'), JSON.stringify(['/login', '/web-only']));
+
+  const { report } = generate({ runsRoot: runs, out, repoRoot: root, now: '2026-11-19T20:00:00Z', routes: { web: 'routes/web.json' } });
+  const templates = report.projects[0]!.routes.map((r) => r.template);
+  assert.ok(templates.includes('/web-only'));
+  assert.ok(!templates.includes('/finalize'), 'the beside-the-spec list is not used');
+  assert.equal(report.projects[0]!.routes.find((r) => r.template === '/web-only')!.known, true);
+});
+
+test('a routes path that does not exist is an error, not an empty list', () => {
+  const { root, runs, out } = setup();
+  failingRun(runs, '20261119-192622-s4242');
+  assert.throws(
+    () => generate({ runsRoot: runs, out, repoRoot: root, now: '2026-11-19T20:00:00Z', routes: { web: 'nope.json' } }),
+    /no routes file at nope.json/,
+  );
+});
+
+test('`bombadil-kit report` takes each project\'s routes from bombadil-kit.json', () => {
+  const { root, runs, out } = setup();
+  failingRun(runs, '20261119-192622-s4242');
+  writeFileSync(join(root, 'web-routes.json'), JSON.stringify(['/from-config']));
+  writeFileSync(join(root, 'bombadil-kit.json'), JSON.stringify({ projects: { web: { dir: 'app', server: { command: ['true'] }, routes: 'web-routes.json' } } }));
+  const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
+  execFileSync(process.execPath, [cli, 'report', '--runs', runs, '--out', out], { cwd: root, stdio: 'ignore' });
+  const report = JSON.parse(readFileSync(join(out, 'report.json'), 'utf8'));
+  assert.ok(report.projects[0].routes.some((r: { template: string }) => r.template === '/from-config'));
 });

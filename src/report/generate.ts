@@ -23,6 +23,8 @@ export interface GenerateOptions {
    * state.json, so a PR's "new" means not seen on main. Missing is fine.
    */
   baseline?: string;
+  /** Per project, its routes file (the config's `projects.<name>.routes`), in preference to routes.json beside the spec. */
+  routes?: Record<string, string>;
 }
 
 const readState = (path: string): State => (existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as State) : emptyState());
@@ -39,7 +41,7 @@ export const generate = (opts: GenerateOptions): { report: Report; exitCode: num
 
   const infos = new Map<string, ProjectInfo>();
   const infoFor = (project: string, spec: string): ProjectInfo => {
-    if (!infos.has(project)) infos.set(project, projectInfo(opts.repoRoot, spec));
+    if (!infos.has(project)) infos.set(project, projectInfo(opts.repoRoot, spec, opts.routes?.[project]));
     return infos.get(project)!;
   };
 

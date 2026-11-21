@@ -50,6 +50,11 @@ export interface ProjectConfig {
   flows?: string;
   /** Where `<spec>.ts` files live. Default `<dir>/bombadil`. */
   specs?: string;
+  /**
+   * The app's route patterns, a JSON array (`["/orders/:id"]`). Default
+   * `routes.json` beside the spec; set it when projects share a specs folder.
+   */
+  routes?: string;
   /** The spec a flow without `spec` runs. Default `spec`. */
   spec?: string;
   /** The cookie a `signedIn` flow starts with, `NAME=VALUE`. */
