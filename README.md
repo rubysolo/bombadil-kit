@@ -202,6 +202,16 @@ milestones({
   is false. The `milestones` snapshot gets the names that turned true:
   edge-triggered per document, so a banner that stays up counts once, and
   again only after it went away.
+- `{ holds, after }` also needs an `ok` call in `window.__mockCalls` whose
+  `key` is `after` (a string, whole; or a RegExp) since `holds` last went
+  false, or since the page loaded. A banner left from an earlier save, or a
+  save the mock answered with an error, isn't reached:
+
+  ```ts
+  milestones({
+    saved: { holds: (doc) => !!doc.querySelector('[role="status"].saved'), after: 'AccountController.save' },
+  });
+  ```
 - The report's milestones tab (`report.json`'s `projects[].milestones`), per
   flow, as of the latest sweep it ran in: each expected milestone, times
   reached, and a strip of the sweeps before; milestones reached but not
