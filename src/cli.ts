@@ -14,8 +14,9 @@
 //
 // Reads bombadil-kit.json from here or above. See README.md.
 import { execFileSync } from 'node:child_process';
-import { existsSync, readFileSync } from 'node:fs';
-import { join, relative, resolve } from 'node:path';
+import { existsSync, readFileSync, realpathSync } from 'node:fs';
+import { dirname, join, relative, resolve } from 'node:path';
+import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { flowsPath, loadConfig, pickProject, readFlows, specsDir, type Loaded } from './config.ts';
 import { affectedFlows, importersOf } from './affected/index.ts';
@@ -219,6 +220,7 @@ const main = async () => {
 };
 
 // The entry-point test, not import.meta.main: that needs Node 24, and the kit
-// supports 22.18. argv[1] is what `node` was pointed at; importing the module
-// leaves it at the importer.
-if (process.argv[1] && import.meta.url === new URL(`file://${process.argv[1]}`).href) await main();
+// supports 22.18. argv[1] is what `node` was pointed at; the npm bin is a
+// symlink to this file, so resolve both sides before comparing. An importer's
+// argv[1] is the importer, so importing this file runs nothing.
+if (process.argv[1] && realpathSync(resolve(process.argv[1])) === realpathSync(fileURLToPath(import.meta.url))) await main();

@@ -27,6 +27,8 @@ export interface RunOptions {
   reproduce?: string;
   /** Use a server already on the port instead of failing; `server.reuse`. */
   reuseServer?: boolean;
+  /** The trace to replay, absolute; set by --reproduce, off the CLI's surface. */
+  replay?: string;
 }
 
 const stamp = (d = new Date()) => {
@@ -212,6 +214,7 @@ export const replayCommand = (dir: string, r: { faults?: number; width: number; 
  * otherwise, 0 clean.
  */
 export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
+  // reproduce() clears `reproduce` before delegating back, so this dispatches once.
   if (o.reproduce) return reproduce(loaded, o);
   const { root, config, out } = loaded;
   const p: ProjectConfig = config.projects[o.project]!;
@@ -291,6 +294,7 @@ export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
         signedInCookie: p.signedInCookie, root, appDir: p.dir,
         values, seed, faults, refDate,
         extra: o.bombadilArgs,
+        replay: o.replay,
       });
 
       console.error(`→ ${flow.name}: ${origin}${flow.start} for ${time} (${kind === 'live' ? 'live backend' : `faults ${faults}, seed ${seed}`})`);
@@ -383,5 +387,7 @@ const reproduce = async (loaded: Loaded, o: RunOptions): Promise<number> => {
   console.error(`→ replaying ${dir} (${project}, seed ${meta.seed})`);
   // Bombadil replays the trace itself, so nothing from the original run's `--`
   // carries over: --exit-on-violation would stop a replay before its end.
-  return run(loaded, { ...o, ...options, project, bombadilArgs: ['--reproduce', trace] });
+  // `replay` is the path through the sweep; `reproduce: undefined` is what
+  // stops the second dispatch coming back here.
+  return run(loaded, { ...o, ...options, project, replay: trace, reproduce: undefined, bombadilArgs: [] });
 };
