@@ -21,6 +21,10 @@ export const failedWritesAreShown = failedWritesShown({
   quiet: [/^DELETE \/session$/],
   errorSelector: '[role="alert"]',
 });
+// Tighter, once the app's error logs include the fault it got: excuse only
+// errors that carry the injector's marker, not any error near a fault.
+//   import { INJECTED_MARKER } from 'bombadil-kit/faults';
+//   consoleQuietUnlessFaulted({ injected: new RegExp(INJECTED_MARKER) })
 export const noConsoleErrorsUnlessFaulted = consoleQuietUnlessFaulted();
 // Only if a floating header can cover content; delete otherwise.
 export const noTextOverLogo = nothingUnder({ selector: 'header img', container: 'header' });

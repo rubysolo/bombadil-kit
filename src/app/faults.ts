@@ -84,13 +84,19 @@ export const prng = (seed: number) => {
   };
 };
 
+/**
+ * Text every built-in fault carries, so a console error that logs one can be
+ * told from any other: `consoleQuietUnlessFaulted({ injected: new RegExp(INJECTED_MARKER) })`.
+ */
+export const INJECTED_MARKER = 'Injected by the mock fault injector';
+
 /** The ways real requests fail. */
 export const FAULTS: Fault[] = [
-  { status: 500, data: { error: 'Internal Server Error' } },
-  { status: 503, data: undefined },
-  { status: 422, data: { errors: ['Injected by the mock fault injector'] } },
-  { status: 'FETCH_ERROR', error: 'TypeError: Failed to fetch' },
-  { status: 'TIMEOUT_ERROR', error: 'AbortError: signal timed out' },
+  { status: 500, data: { error: `Internal Server Error (${INJECTED_MARKER})` } },
+  { status: 503, data: `Service Unavailable (${INJECTED_MARKER})` },
+  { status: 422, data: { errors: [INJECTED_MARKER] } },
+  { status: 'FETCH_ERROR', error: `TypeError: Failed to fetch (${INJECTED_MARKER})` },
+  { status: 'TIMEOUT_ERROR', error: `AbortError: signal timed out (${INJECTED_MARKER})` },
 ];
 
 /** `(method, path)` → the fault to answer with, or undefined to let it through. */

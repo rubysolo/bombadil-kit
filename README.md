@@ -148,7 +148,8 @@ bundle declare `x` twice, and the spec won't load.
 | `noLeakedText(pattern?)` | no `undefined`, `NaN`, `[object Object]`, `Invalid Date`, `null` in the text |
 | `noSidewaysScroll(tolerance?)` | the page never scrolls horizontally |
 | `failedWritesShown({ quiet, errorSelector, within })` | a write the fault injector failed is followed by a visible error within 5s; slow and hung writes don't count |
-| `consoleQuietUnlessFaulted(grace?, hangGrace?)` | no console error, except within 5s of an injected error, 5s after a slow response answers, or `hangGrace` (default `grace`) after a hang started |
+| `consoleQuietUnlessFaulted(grace?, hangGrace?)` | no console error, except within 5s of an injected error, 5s after a slow response answers, or `hangGrace` (default `grace`) after a hang started; also takes `{ grace, hangGrace }` |
+| `consoleQuietUnlessFaulted({ injected })` | no console error, except one whose text matches `injected` (the marker the mock layer puts in what it injects), whenever it lands; with the built-in injector, `new RegExp(INJECTED_MARKER)`. Needs `installFuzzConsole` when the marker is inside a logged object: Bombadil records those as `"Object"` |
 | `nothingUnder({ selector, container })` | no text is drawn over, say, a floating header's logo |
 | `appRenders({ root, within })` | something renders within 10s; also records rendered files |
 
@@ -187,7 +188,7 @@ if (import.meta.env.VITE_FUZZ === 'true') installFuzzConsole();
 | module | env | does |
 |---|---|---|
 | `bombadil-kit/rtk` | `VITE_MOCK_FAULT_RATE`, `_SEED` | `withFaults(baseQuery, env, { spare, isWrite, onFault })`: fails that share of requests as 500, 503, 422, network error or timeout, chosen by a seeded PRNG; returns `baseQuery` itself when off |
-| `bombadil-kit/faults` | same | `createFaultInjector({ rate, seed, spare, isWrite })`, for mock layers other than RTK Query; both log to `window.__mockFaults` |
+| `bombadil-kit/faults` | same | `createFaultInjector({ rate, seed, spare, isWrite })`, for mock layers other than RTK Query; both log to `window.__mockFaults`. `INJECTED_MARKER`: the text every built-in fault carries |
 | `bombadil-kit/faker` | `VITE_MOCK_SEED`, `VITE_MOCK_REF_DATE` | seeds the app's faker and its reference date; `mockRandom`/`mockNow` for the rest of the mock layer |
 | `bombadil-kit/console` | `VITE_FUZZ` | each `console.error` becomes one string with the source lines that raised it (Bombadil records only the first argument) |
 
@@ -201,6 +202,10 @@ itself:
 | `write` | optional. Whether it changes data; overrides the `method !== 'GET'` guess. Transports without HTTP verbs set it; `isWrite(method, path)` on `withFaults`/`createFaultInjector` fills it |
 | `kind` | optional. `'error'` (the default): it failed. `'slow'`: it answered `delayMs` late. `'hang'`: it never answers; console errors are excused for `hangGrace` after `at`, not for the rest of the page, and spinners for the rest of it |
 | `delayMs` | optional, for `slow` |
+
+For `consoleQuietUnlessFaulted({ injected })`, such a layer puts one marker
+in every failure it injects (`/Mock world injected failure/`), in the text the
+app ends up logging.
 
 `spare` the mock's control endpoints and whatever every page needs to render
 at all (translations, feature flags): failing those makes every page fail the
