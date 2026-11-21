@@ -139,3 +139,21 @@ test('buildReport shows per flow its expected milestones (reached, history), the
   const plain = buildReport(applySweep(emptyState(), [run('r1', [])], 't1'), {}, { generatedAt: 'now', evidence: () => [] });
   assert.ok(!('milestones' in plain.projects[0]!), 'no milestones, no milestones field');
 });
+
+test('repro.replay rides along with the run, and a run without it is as before', () => {
+  const withReplay = run('r9', [{ property: 'spinnersSettle', route: '/cart' }]);
+  withReplay.meta = { ...withReplay.meta, replay: 'npx bombadil-kit run --reproduce tmp/r/web/r9 --faults 0.1 --width 390 --height 844' };
+  let s = applySweep(emptyState(), [withReplay, run('r10', [{ property: 'noLeakedValues', route: '/login' }])], '2026-11-19T19:00:00Z');
+  const report = buildReport(s, { web: { properties: [], routes: [] } }, { generatedAt: 'now', evidence: () => [] });
+
+  const replayed = report.findings.find((f) => f.id === 'F-spinnersSettle')!;
+  assert.equal(replayed.repro.replay, 'npx bombadil-kit run --reproduce tmp/r/web/r9 --faults 0.1 --width 390 --height 844');
+  // Beside the command that runs the flow again, not instead of it.
+  assert.equal(replayed.repro.command, 'npm run fuzz -- --seed 42');
+  // A run from before the field keeps its finding's shape: no replay, no key.
+  const older = report.findings.find((f) => f.id === 'F-noLeakedValues')!;
+  assert.equal(older.repro.replay, undefined);
+  assert.ok(!('replay' in older.repro));
+});
+
+});

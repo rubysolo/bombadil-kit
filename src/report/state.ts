@@ -71,6 +71,8 @@ export interface RunInfo {
   exit_code: number;
   started_at: string;
   command: string;
+  /** How to replay the run's trace; absent in state written before it. */
+  replay?: string;
   spec: string;
   target: Record<string, unknown>;
 }
@@ -163,7 +165,7 @@ export const applySweep = (state: State, runs: readonly RunResult[], at: string)
       ...Object.fromEntries(
         fresh.map((r) => [
           r.id,
-          { sweep: id, seed: r.meta.seed, actions: r.actions, exit_code: r.meta.exit_code, started_at: r.meta.started_at, command: r.meta.command ?? '', spec: r.meta.spec, target: r.meta.target },
+          { sweep: id, seed: r.meta.seed, actions: r.actions, exit_code: r.meta.exit_code, started_at: r.meta.started_at, command: r.meta.command ?? '', replay: r.meta.replay, spec: r.meta.spec, target: r.meta.target },
         ]),
       ),
     },

@@ -324,7 +324,8 @@ function finding(id, mode) {
     '<div class="cols"><div class="main">' +
     '<section class="panel pad" style="display:flex;flex-direction:column;gap:8px"><h2>What happened</h2><span class="w" style="font-size:15px">' + esc(f.property) + ' failed on ' + esc(f.route) + '.</span><span class="dim">' + esc(f.url) + '</span></section>' +
     '<section class="panel pad term" style="display:flex;flex-direction:column;gap:8px"><h2 class="h">Last actions before it</h2><div class="steps">' + steps + '</div>' +
-    '<code class="cmd dim" style="margin-top:8px"><span class="g">$</span> ' + esc(f.repro.command || 'seed ' + f.repro.seed) + '</code></section>' +
+    '<code class="cmd dim" style="margin-top:8px"><span class="g">$</span> ' + esc(f.repro.command || 'seed ' + f.repro.seed) + '</code>' +
+    (f.repro.replay ? '<code class="cmd dim"><span class="g">$</span> ' + esc(f.repro.replay) + ' <span class="dim">the same trace, replayed</span></code>' : '') + '</section>' +
     (frames ? '<section class="panel pad" style="display:flex;flex-direction:column;gap:12px"><h2>Evidence</h2><div class="frames">' + frames + '</div></section>' : '') +
     '</div><aside class="side">' +
     '<section class="panel pad"><h2>What the property saw</h2>' + (snaps || '<div class="dim">nothing captured</div>') + '</section>' +

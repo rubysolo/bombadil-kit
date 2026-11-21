@@ -76,6 +76,7 @@ example):
 | `target` | `mock` | `live`: a real backend, see [below](#against-a-real-backend) |
 | `server.command`, `server.env` | | `{port}` `{seed}` `{faults}` `{latency}` `{refDate}` are filled in |
 | `server.port`, `server.ready` | `5199`, `/` | |
+| `server.reuse` | off | use a server already on the port, and leave it running; `--reuse-server` |
 | `flows` | `<dir>/bombadil/flows.json` | without one, a single `explore` flow from `/` |
 | `specs`, `spec` | `<dir>/bombadil`, `spec` | where `<spec>.ts` files live; the default spec |
 | `signedInCookie` | | `NAME=VALUE` a `signedIn` flow starts with |
@@ -93,6 +94,9 @@ npx bombadil-kit run --flow checkout --time 3m # repeat --flow for more
 npx bombadil-kit run --flow checkout --headed  # watch it
 npx bombadil-kit run --faults 0                # happy path only
 npx bombadil-kit run --seed 1234 --ref-date 2026-11-19   # same mock data and faults as that run
+npx bombadil-kit run -- --exit-on-violation  # everything after -- goes to Bombadil
+npx bombadil-kit run --reproduce tmp/bombadil/runs/web/<run>  # replay that run's trace
+npx bombadil-kit run --reuse-server          # a server already on the port, left running
 npx bombadil-kit run --width 1280 --height 800 # desktop
 npx bombadil-kit list                          # the flows
 npx bombadil-kit report --fail-on new          # exit 1 if the latest sweep found something new
@@ -100,6 +104,17 @@ npx bombadil browser inspect tmp/bombadil/runs/web/<run>   # step through one ru
 ```
 
 `run` exits 0 clean, 2 on a property violation, 1 otherwise.
+
+A finding's `repro.command` reruns the flow; `--reproduce <run dir>` replays it.
+It reads that run's `run.json`, starts the server with its seed, faults, latency,
+mock date and viewport, and has Bombadil replay its trace on the same flow and
+spec instead of exploring. Each finding in `report.json` carries the command as
+`repro.replay`, beside `repro.command`.
+
+`--reuse-server` is for a server you started yourself: something already
+answering on the port is used instead of refused, and not stopped afterwards.
+Its `server.command` and `server.env` never run, so the run's seed, fault rate
+and mock date reach the page by URL and cookies alone (see `fuzz_seed` under [Flows](#flows)).
 
 ### Against a real backend
 
@@ -139,10 +154,16 @@ a form. `flows.json` splits the app into workflows:
 ```
 
 - `start`: where the workflow starts, usually a fixture the mock API serves.
+  `{port}` `{seed}` `{faults}` `{latency}` `{refDate}` are filled in as in
+  `server.command`, so `/?world={seed}` seeds a mock at runtime: the way that
+  works against a prebuilt bundle, where `server.env` never reaches the app.
 - `allow`: the fence, exact paths or prefixes ending in `*`. Passed to
   Bombadil's `--allow-url` (which only polices full page loads) and to the page
   in the `fuzz_fence` cookie, which `fenced(...)` reads: outside the fence the
   only action is Back.
+- The run also hands the page `fuzz_seed`, `fuzz_faults` and `fuzz_ref_date`:
+  the same values `server.env` is given, for a bundle built before the run and
+  so able to read only the URL and the cookies.
 - `signedIn`: start with `signedInCookie`. The app has to accept a session
   from a cookie in mock mode; see [prompts/INTEGRATE.md](prompts/INTEGRATE.md).
 - `spec`: which spec file runs it.

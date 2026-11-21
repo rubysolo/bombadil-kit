@@ -30,7 +30,7 @@ export interface ReportFinding {
   of_sweeps: number;
   runs_hit: number;
   target: Record<string, unknown>;
-  repro: { seed: number; run: string; command: string; steps: Step[] };
+  repro: { seed: number; run: string; command: string; steps: Step[]; /** How to replay the run's trace; absent from a report built before it. */ replay?: string };
   /** inspect: Bombadil's viewer on the whole run (every state), from the repo root. */
   evidence: { frames: string[]; run_dir: string; inspect: string };
   snapshots: Snapshot[];
@@ -178,7 +178,7 @@ export const buildReport = (state: State, info: Record<string, ProjectInfo>, opt
         of_sweeps: sweepsOf(f.project).length,
         runs_hit: f.runs_hit,
         target: run?.target ?? {},
-        repro: { seed: f.last.seed, run: f.last.run, command: run?.command ?? '', steps: f.last.steps },
+        repro: { seed: f.last.seed, run: f.last.run, command: run?.command ?? '', steps: f.last.steps, ...(run?.replay ? { replay: run.replay } : {}) },
         evidence: {
           frames: opts.evidence(f),
           run_dir: f.last.run,

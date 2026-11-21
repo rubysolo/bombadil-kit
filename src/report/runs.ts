@@ -20,6 +20,12 @@ export interface RunMeta {
   flow?: string;
   /** The milestones its flow declares (flows.json `milestones`); absent when none. */
   expected_milestones?: string[];
+  /** How to replay this run's trace, from the repo root; runs from before it has none. */
+  replay?: string;
+  /** What the run handed Bombadil after `--`; absent when there was nothing. */
+  bombadil_args?: string[];
+  /** How long it explored, as it was given. */
+  time_limit?: string;
 }
 
 export interface Step {
