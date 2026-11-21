@@ -30,11 +30,14 @@ import {
   consoleErrorExcused,
   faultInFlight,
   freshFailedWrite,
+  unannouncedWrite,
+  faultLine,
   isErrorFault,
   isWriteFault,
   spinnerDeadline,
   unexcusedConsoleErrors,
   type ConsoleExcuse,
+  type WriteWatch,
   type FaultKind,
   type InjectedFault,
 } from './faults.ts';
@@ -45,17 +48,20 @@ export {
   faultInFlight,
   freshFailedWrite,
   hasSettled,
+  unannouncedWrite,
+  faultLine,
   isErrorFault,
   isWriteFault,
   spinnerDeadline,
   unexcusedConsoleErrors,
   type ConsoleExcuse,
+  type WriteWatch,
   type FaultKind,
   type InjectedFault,
   type Persisted,
 };
 
-type FaultWindow = Window & { __mockFaults?: InjectedFault[] };
+type FaultWindow = Window & { __mockFaults?: InjectedFault[]; __fuzzWrites?: WriteWatch };
 type PersistWindow = Window & { __fuzzPersisted?: PersistStore };
 type ActionGenerator = ReturnType<typeof actions>;
 
@@ -134,9 +140,12 @@ export const noSidewaysScroll = (tolerance = 1) => {
 
 /**
  * When the app's fault injector fails a write (`write: true`, or without it
- * anything but GET), the user is told within `within` seconds: something
- * matching `errorSelector` shows up with text in it. Reads `window.__mockFaults`
- * (bombadil-kit/faults); slow and hung faults don't count.
+ * anything but GET), the user is told on the page they're on when it fails:
+ * something matching `errorSelector` shows up there with text in it, within
+ * `within` seconds and before they leave. An alert on another page doesn't
+ * count, and one that shows and is then cleared (a retry that succeeds, a
+ * Dismiss) has done its job: one alert per failed write. Reads
+ * `window.__mockFaults` (bombadil-kit/faults); slow and hung faults don't count.
  * `quiet`: writes that fail silently on purpose, as `/^METHOD \/path$/`.
  */
 export const failedWritesShown = ({
@@ -144,14 +153,16 @@ export const failedWritesShown = ({
   errorSelector = '[role="alert"]',
   within = 5,
 } = {}) => {
-  const failedWrite = extract((state) => {
-    const fault = freshFailedWrite((state.window as FaultWindow).__mockFaults ?? [], Date.now(), quiet);
-    return fault ? `${fault.method} ${fault.path} → ${String(fault.status)}` : null;
+  const unannounced = extract((state) => {
+    const win = state.window as FaultWindow;
+    const alertShown = [...state.document.querySelectorAll(errorSelector)].some(
+      (el) => isVisible(el) && (el.textContent ?? '').trim() !== '',
+    );
+    // On the window, like __mockFaults: a page load starts both over.
+    const watch = (win.__fuzzWrites ??= { pending: [], seen: new WeakSet() });
+    return unannouncedWrite(watch, win.__mockFaults ?? [], Date.now(), quiet, state.navigationHistory.current.id, alertShown, within * 1000);
   });
-  const errorShown = extract((state) =>
-    [...state.document.querySelectorAll(errorSelector)].some((el) => isVisible(el) && (el.textContent ?? '').trim() !== ''),
-  );
-  return always(now(() => failedWrite.current !== null).implies(eventually(() => errorShown.current).within(within, 'seconds')));
+  return always(() => unannounced.current === null);
 };
 
 /**

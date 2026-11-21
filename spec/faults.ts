@@ -39,6 +39,47 @@ export const spinnerDeadline = (faults: readonly InjectedFault[], now: number, w
   return within * 1000 + slow;
 };
 
+/** What failedWritesShown remembers across states, on the page's `window`: a page load starts it over, with __mockFaults. */
+export interface WriteWatch {
+  /** Failed writes not yet told: the history entry they're owed an alert on, and since when. */
+  pending: { fault: InjectedFault; entry: number; since: number }[];
+  /** Every failed write already taken up, so each is owed one alert, not one per state. */
+  seen: { has(f: InjectedFault): boolean; add(f: InjectedFault): unknown };
+}
+
+/** How a fault reads in a finding: `POST /orders → 500`. */
+export const faultLine = (f: InjectedFault) => `${f.method} ${f.path} → ${String(f.status)}`;
+
+/**
+ * failedWritesShown, for one captured state. A failed write (fresh, not
+ * `quiet`, an error) is owed an alert on the history entry the walker is on
+ * when it's first seen: where the user is when the failure lands. An alert
+ * there settles it. Leaving that entry first, or `within` ms passing, makes
+ * it unannounced: returns its line, once. An alert on another page doesn't
+ * count; that's how a write that fails silently hid behind an unrelated error.
+ */
+export const unannouncedWrite = (
+  watch: WriteWatch,
+  faults: readonly InjectedFault[],
+  now: number,
+  quiet: readonly RegExp[],
+  entry: number,
+  alertShown: boolean,
+  within = 5000,
+  fresh = 1500,
+): string | null => {
+  for (const f of faults) {
+    if (watch.seen.has(f) || !isErrorFault(f) || !isWriteFault(f) || now - f.at >= fresh) continue;
+    watch.seen.add(f);
+    if (!quiet.some((q) => q.test(`${f.method} ${f.path}`))) watch.pending.push({ fault: f, entry, since: now });
+  }
+  if (alertShown) watch.pending = watch.pending.filter((p) => p.entry !== entry);
+  const late = watch.pending.find((p) => p.entry !== entry || now - p.since > within);
+  if (!late) return null;
+  watch.pending = watch.pending.filter((p) => p !== late);
+  return faultLine(late.fault);
+};
+
 /**
  * consoleQuietUnlessFaulted's excuse: a fault that may still be making the app
  * log. An error for `grace` ms after it; a slow response until `grace` ms

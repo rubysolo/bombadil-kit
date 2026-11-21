@@ -35,7 +35,7 @@ npx bombadil-kit run               # a plain sweep; report in tmp/bombadil/repor
 | `spinner` | the cart's spinner never clears | `spinnersClear`: **known gap**, the walker never stays 15s on a page |
 | `leak` | the price shows `undefined` | `noLeakedText` |
 | `overflow` | the product list is 1200px wide | `noSidewaysScroll` |
-| `silent-write` | a failed add-to-cart shows nothing | `failedWritesShown`: **known gap**, any alert on any page within 5s counts |
+| `silent-write` | a failed add-to-cart shows nothing | `failedWritesShown` |
 | `noisy` | list items without keys: React warns | `consoleQuietUnlessFaulted` |
 | `overlap` | a fixed promo line sits over the logo | `nothingUnder` |
 | `blank` | the app never mounts | `appRenders` |

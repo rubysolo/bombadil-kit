@@ -7,12 +7,7 @@
   },
   "leak": { "property": "noLeakedValues", "flow": "buy" },
   "overflow": { "property": "noHorizontalOverflow", "flow": "explore" },
-  "silent-write": {
-    "property": "failedWritesAreShown",
-    "flow": "buy",
-    "faults": 0.5,
-    "known": "any visible alert within 5s counts, on any page: in one 30s run all 8 silent add-to-cart failures were covered by unrelated alerts after the walker moved on (checkout's 422, an order's Not found); caught only when the walker happens not to"
-  },
+  "silent-write": { "property": "failedWritesAreShown", "flow": "buy", "faults": 0.5 },
   "noisy": { "property": "noConsoleErrorsUnlessFaulted", "flow": "explore" },
   "overlap": { "property": "noTextOverLogo", "flow": "explore" },
   "blank": { "property": "appRenders", "flow": "explore" },
