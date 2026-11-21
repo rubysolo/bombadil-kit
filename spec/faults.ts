@@ -98,3 +98,16 @@ export const consoleErrorExcused = (
   // search, not test: a /g regex's lastIndex would make test() alternate.
   return args.length > 0 && (first.search(injected) !== -1 || json(args).search(injected) !== -1);
 };
+
+/**
+ * consoleQuietUnlessFaulted's extract: the args of each console error not
+ * excused. Messages, not a count: the report names a finding by the first
+ * string it carried and tells findings apart by it, so a count would leave
+ * every console finding on a route blank and merged into one.
+ */
+export const unexcusedConsoleErrors = <Args extends readonly unknown[]>(
+  entries: readonly { level: string; args: Args }[],
+  faults: readonly InjectedFault[],
+  now: number,
+  excuse: ConsoleExcuse = {},
+) => entries.filter((e) => e.level === 'error' && !consoleErrorExcused(e.args, faults, now, excuse)).map((e) => e.args);
