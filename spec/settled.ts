@@ -34,10 +34,10 @@ export const persist = (store: PersistStore, key: string, entry: number, active:
 export const hasSettled = ({ ms, states }: Persisted, { minStates = 3, minMs = 1000 } = {}) =>
   states >= minStates && ms >= minMs;
 
-/** Where `spinnerTime` keeps its tally: ms of spinner per path, and the last capture that showed one. */
 /** A path's spinner time since it was last seen without one: all of it, and the part with nothing in flight. */
 export type SpinnerTally = { idle: number; on: number };
 
+/** Where `spinnerTime` keeps its tally: one per path, and the last capture that showed a spinner. */
 export type SpinnerStore = { paths: Record<string, SpinnerTally>; last?: { path: string; at: number; busy?: number; page?: number } };
 
 /**
@@ -53,6 +53,12 @@ export type SpinnerStore = { paths: Record<string, SpinnerTally>; last?: { path:
  * which credits nothing). Minus the part of that a mock request was in flight (`busy`: ms in
  * flight since the page loaded, from bombadil-kit/faults' startMockRequest):
  * a spinner waiting on a slow request the walker never waits out isn't stuck.
+ *
+ * `excused` (a hang was injected on this page, spinnerDeadline null): the
+ * interval ending now credits nothing, to `on` or `idle`. The verdict already
+ * excuses it; counted, it would carry into the tally after the next reload and
+ * call a healthy load stuck (on layers without a busy clock, where all of it
+ * is idle), or dilute `share` (on layers with one).
  */
 export const spinnerTime = (
   store: SpinnerStore,
@@ -62,13 +68,14 @@ export const spinnerTime = (
   busy?: number,
   left?: { at: number; busy?: number },
   page?: number,
+  excused = false,
 ): SpinnerTally => {
   const last = store.last;
   const tally = last && store.paths[last.path];
   if (last && tally) {
     const stayed = path === last.path && last.page === page;
     const end = stayed ? { at: now, busy } : left && left.at >= last.at && left.at <= now ? left : undefined;
-    if (end) {
+    if (end && !excused) {
       const shown = Math.max(0, end.at - last.at);
       const waiting = end.busy !== undefined && last.busy !== undefined ? Math.max(0, end.busy - last.busy) : 0;
       tally.on += shown;

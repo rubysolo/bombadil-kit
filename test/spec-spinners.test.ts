@@ -144,6 +144,17 @@ test('spinnerTime: a reload of the same path is a new page load: the gap across 
   assert.equal(spinnerTime(store, '/reviews/1', true, t + 500, 0, undefined, 2).idle, 100);
 });
 
+test('spinnerTime: a hang excuses its interval; a reload into a healthy world starts from zero (no busy clock)', () => {
+  // A layer that reports faults on __mockFaults but doesn't count requests in flight.
+  const store: SpinnerStore = { paths: {} };
+  for (let i = 0; i <= 200; i++) spinnerTime(store, '/cart', true, t + i * 100, undefined, undefined, 1, true);
+  // The reload: a new page load, a fresh __mockFaults, no hang.
+  spinnerTime(store, '/cart', true, t + 20000, undefined, undefined, 2);
+  const tally = spinnerTime(store, '/cart', true, t + 20100, undefined, undefined, 2);
+  assert.deepEqual(tally, { idle: 100, on: 100 });
+  assert.equal(spinnerStuck(tally, 15000), false);
+});
+
 test('spinnerTime: `on` is all the spinner time, `idle` the part with nothing in flight', () => {
   // The abandoned slow request: lots of spinner, almost none of it idle.
   const slow: SpinnerStore = { paths: {} };

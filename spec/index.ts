@@ -120,6 +120,10 @@ export const errorBoundaryNeverShown = (selector = '[data-testid="error-boundary
   return always(() => !shown.current);
 };
 
+/** Which spinnersClear tally a page adds to. */
+export type PageKey = (loc: Location) => string;
+const byPath: PageKey = (loc) => loc.pathname;
+
 /**
  * A visible loading indicator clears. A random walker leaves a page within a
  * fraction of a second, so a spinner that never clears is never seen for long
@@ -135,24 +139,32 @@ export const errorBoundaryNeverShown = (selector = '[data-testid="error-boundary
  * flight adds its `delayMs` to the deadline, and once a hang was injected the
  * property holds (a hung request spins forever).
  * `exclude`: spinners inside an element matching it are meant to run long.
+ * `key`: which tally a page adds to; the path by default. Pages that route on
+ * the query string (`/?id=open`, `/?id=closed`) need it to keep theirs apart:
+ * `key: (loc) => loc.pathname + loc.search`.
+ *
+ * "In flight" means any mock request, not only the one the spinner waits on:
+ * while a long unrelated request runs (polling, a slow fault on another
+ * endpoint), a stuck spinner counts as busy, and that time is missed.
  */
 export const spinnersClear = ({
   selector = LOADING,
   within = 15,
   share = 0.1,
   exclude,
-}: { selector?: string; within?: number; share?: number; exclude?: string } = {}) => {
+  key = byPath,
+}: { selector?: string; within?: number; share?: number; exclude?: string; key?: PageKey } = {}) => {
   const stuck = extract((state) => {
     const win = state.window as FaultWindow & SpinnerWindow;
     const at = Date.now();
-    const path = win.location.pathname;
+    const path = key(win.location);
     const deadline = spinnerDeadline(win.__mockFaults ?? [], at, within);
     const store = spinnerStore(win);
     watchLeaving(win);
     const left = win.__fuzzLeft ?? undefined;
     win.__fuzzLeft = null;
     const spinning = visibleOutside(state.document.querySelectorAll(selector), exclude);
-    const tally = spinnerTime(store.value, path, spinning, at, busyMs(win, at), left, win.performance.timeOrigin);
+    const tally = spinnerTime(store.value, path, spinning, at, busyMs(win, at), left, win.performance.timeOrigin, deadline === null);
     store.save();
     // A string, so the report names the path and tells stuck paths apart.
     return spinnerStuck(tally, deadline, share) ? `${path}: still loading, ${Math.round(tally.idle / 1000)}s of it with nothing in flight` : null;
@@ -184,6 +196,11 @@ type SpinnerWindow = FaultWindow & {
  * Records when the walker leaves a page (pushState, replaceState, popstate),
  * with the busy clock at that moment: spinnersClear credits a spinner only up
  * to then. Installed once per page load.
+ *
+ * It replaces `history.pushState` and `replaceState` on the app's window with
+ * wrappers that pass every call through. Debugging navigation in fuzz mode? A
+ * router or analytics script that wraps them too wraps the kit's wrapper, and
+ * the kit's frame shows in their stacks.
  */
 const watchLeaving = (win: SpinnerWindow) => {
   if (win.__fuzzWatchingLeaving) return;
