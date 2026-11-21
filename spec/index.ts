@@ -189,6 +189,14 @@ export interface FailedWritesOptions {
   errorSelector?: string;
   /** Seconds the alert has to show within. Default 5. */
   within?: number;
+  /**
+   * ms after a failed write is first seen within which leaving the page
+   * drops it instead of reporting it: the mock layer may have logged it at
+   * the call's start, and the walker left before the app could answer.
+   * Only for faults without `deliveredAt`; with it, leaving before delivery
+   * drops it and leaving after reports it. Default 1000.
+   */
+  leaveGrace?: number;
   /** The endpoint, for the finding's id. Default requestPattern: record segments of the path as `:id`. */
   request?: (method: string, path: string) => string;
 }
@@ -197,7 +205,8 @@ export interface FailedWritesOptions {
  * When the app's fault injector fails a write (`write: true`, or without it
  * anything but GET), the user is told on the page they're on when it fails:
  * something matching `errorSelector` shows up there with text in it, within
- * `within` seconds and before they leave. An alert on another page doesn't
+ * `within` seconds and before they leave (leaving before the error could
+ * have reached the app doesn't count: see `leaveGrace`). An alert on another page doesn't
  * count, and one that shows and is then cleared (a retry that succeeds, a
  * Dismiss) has done its job: one alert per failed write. Reads
  * `window.__mockFaults` (bombadil-kit/faults); slow and hung faults don't count.
@@ -207,6 +216,7 @@ export const failedWritesShown = ({
   quiet = [] as RegExp[],
   errorSelector = '[role="alert"]',
   within = 5,
+  leaveGrace = 1000,
   request = requestPattern,
 }: FailedWritesOptions = {}) => {
   const unannounced = extract((state) => {
@@ -216,7 +226,7 @@ export const failedWritesShown = ({
     );
     // On the window, like __mockFaults: a page load starts both over.
     const watch = (win.__fuzzWrites ??= { pending: [], seen: new WeakSet() });
-    const fault = unannouncedWrite(watch, win.__mockFaults ?? [], Date.now(), quiet, state.navigationHistory.current.id, alertShown, within * 1000);
+    const fault = unannouncedWrite(watch, win.__mockFaults ?? [], Date.now(), quiet, state.navigationHistory.current.id, alertShown, within * 1000, undefined, leaveGrace);
     // `request` first: the report names a finding, and builds its id, from
     // the first string, so one endpoint's failures are one finding whatever
     // the status or record. The full line is the evidence.
