@@ -8,10 +8,16 @@
 //   export const noErrorBoundary = errorBoundaryNeverShown('[data-testid="crash"]');
 //   export const spinnersSettle = spinnersClear({ selector: '.spinner' });
 //
-// The runner (`bombadil-kit run`) hands the page three cookies these read:
+// The runner (`bombadil-kit run`) hands the page cookies these read:
 //   fuzz_fence  the flow's allowed paths (`fenced`)
 //   fuzz_root   the repo's absolute path (`appRenders`, for repo-relative files)
 //   fuzz_app    the app's directory in the repo (`appRenders`, Vite URLs)
+//   fuzz_seed     the run's seed        fuzz_faults  its fault rate
+//   fuzz_ref_date the run's mock date
+// The last three are how a run's seed, fault rate and mock date reach the page
+// when server.env can't: a prebuilt static bundle reads only the URL and the
+// cookies. `/?world={seed}` in a flow's start and these carry the same values
+// `server.command` and `server.env` are given.
 import { always, eventually } from '@antithesishq/bombadil';
 import {
   actions,

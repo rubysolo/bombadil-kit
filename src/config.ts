@@ -45,6 +45,10 @@ export interface ProjectConfig {
     port?: number;
     /** Path that answers once the server is up. Default `/`. */
     ready?: string;
+    /** Something already on the port is used instead of refused, and left
+     * running afterwards. The same as `--reuse-server`; its `command` and `env`
+     * never run, so the placeholders reach the page by URL and cookie instead. */
+    reuse?: boolean;
   };
   /** Default `<dir>/bombadil/flows.json`. Without one, a single `explore` flow from `/`. */
   flows?: string;
