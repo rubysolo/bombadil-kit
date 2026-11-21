@@ -1,6 +1,8 @@
 // How long a condition has held, for spec/index.ts, with no Bombadil imports
 // so node can test it.
 
+import { hungSince, slowOverlap, type InjectedFault } from './faults.ts';
+
 /** How long a condition has held: milliseconds, and captured states. A type, not an interface: `extract` needs it to be JSON. */
 export type Persisted = { ms: number; states: number };
 
@@ -50,15 +52,17 @@ export type SpinnerStore = { paths: Record<string, SpinnerTally>; last?: { path:
  * A capture that shows a spinner is credited with the time until the next
  * capture on its page, or, if the walker left first, until it left (`left`:
  * when, and the busy clock then; unknown across a reload, `page` changing,
- * which credits nothing). Minus the part of that a mock request was in flight (`busy`: ms in
- * flight since the page loaded, from bombadil-kit/faults' startMockRequest):
- * a spinner waiting on a slow request the walker never waits out isn't stuck.
+ * which credits nothing). Minus, for `idle`, the part of that something was
+ * in flight: a mock request (`busy`: ms in flight since the page loaded, from
+ * bombadil-kit/faults' startMockRequest), or a slow fault (`faults`, the
+ * page's `__mockFaults`: `at` to `at + delayMs`), whichever covers more. A
+ * spinner waiting on a slow request the walker never waits out isn't stuck.
  *
- * `excused` (a hang was injected on this page, spinnerDeadline null): the
- * interval ending now credits nothing, to `on` or `idle`. The verdict already
- * excuses it; counted, it would carry into the tally after the next reload and
- * call a healthy load stuck (on layers without a busy clock, where all of it
- * is idle), or dilute `share` (on layers with one).
+ * Once a hang was injected on this page (in `faults`), intervals credit
+ * nothing, to `on` or `idle`. The verdict already excuses them; counted, they
+ * would carry into the tally after the next reload and call a healthy load
+ * stuck (on layers without a busy clock, where all of it is idle), or dilute
+ * `share` (on layers with one).
  */
 export const spinnerTime = (
   store: SpinnerStore,
@@ -68,16 +72,17 @@ export const spinnerTime = (
   busy?: number,
   left?: { at: number; busy?: number },
   page?: number,
-  excused = false,
+  faults: readonly InjectedFault[] = [],
 ): SpinnerTally => {
   const last = store.last;
   const tally = last && store.paths[last.path];
   if (last && tally) {
     const stayed = path === last.path && last.page === page;
     const end = stayed ? { at: now, busy } : left && left.at >= last.at && left.at <= now ? left : undefined;
-    if (end && !excused) {
+    if (end && !hungSince(faults)) {
       const shown = Math.max(0, end.at - last.at);
-      const waiting = end.busy !== undefined && last.busy !== undefined ? Math.max(0, end.busy - last.busy) : 0;
+      const requests = end.busy !== undefined && last.busy !== undefined ? Math.max(0, end.busy - last.busy) : 0;
+      const waiting = Math.max(requests, slowOverlap(faults, last.at, end.at));
       tally.on += shown;
       tally.idle += Math.max(0, shown - waiting);
     }
@@ -98,7 +103,8 @@ export const spinnerTime = (
  * `share` of all its spinner time. A spinner waiting on requests the walker
  * keeps abandoning is mostly not idle, however long the sweep; a stuck one is
  * mostly idle, so a share doesn't grow with run length the way a total does.
- * `deadline` null (a hang was injected): never stuck. Measured on the example
+ * `deadline` null (a hang was injected): never stuck. spinnersClear passes
+ * `within` as is: spinnerTime already leaves slow-fault time out of `idle`. Measured on the example
  * shop: a stuck spinner is 28–33% idle, one waiting on abandoned slow requests
  * 1%, whatever the run length; hence 0.1.
  */
