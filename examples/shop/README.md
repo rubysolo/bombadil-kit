@@ -39,6 +39,7 @@ npx bombadil-kit run               # a plain sweep; report in tmp/bombadil/repor
 | `noisy` | list items without keys: React warns | `consoleQuietUnlessFaulted` |
 | `overlap` | a fixed promo line sits over the logo | `nothingUnder` |
 | `blank` | the app never mounts | `appRenders` |
+| `empty` | the cart renders nothing past the header | `noBlankPage` |
 | `throw` | the add-to-cart handler throws | Bombadil's `noUncaughtExceptions` |
 | `reject` | a failed add-to-cart is never caught | Bombadil's `noUnhandledPromiseRejections` |
 
