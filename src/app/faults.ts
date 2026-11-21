@@ -12,6 +12,9 @@
  * restarts the sequence.
  *
  * With RTK Query, use bombadil-kit/rtk's withFaults instead of this directly.
+ * A layer with its own latency should answer a fault after that wait too, so
+ * a failing request takes as long as a working one, and pass the wait as
+ * `deliverIn` (withFaults: its `latency` option).
  */
 export interface FaultConfig {
   /** Share of requests to fail, 0–1. */
@@ -22,9 +25,9 @@ export interface FaultConfig {
   /** Whether a request changes data, for transports without HTTP verbs; fills InjectedFault's `write`. */
   isWrite?: (method: string, path: string) => boolean;
   /**
-   * The caller answers with the fault at once (withFaults does): logs
-   * `deliveredAt` = `at`, so failedWritesShown gives no `leaveGrace`. Leave it
-   * off if the layer answers after a delay, and log `deliveredAt` itself.
+   * The caller answers with the fault at once: logs `deliveredAt` = `at`, so
+   * failedWritesShown gives no `leaveGrace`. A layer that answers after a
+   * delay passes it per call instead: `inject(method, path, delayMs)`.
    */
   delivered?: boolean;
 }
@@ -184,7 +187,10 @@ export const FAULTS: Fault[] = [
 ];
 
 /**
- * `(method, path)` → the fault to answer with, or undefined to let it through.
+ * `(method, path, deliverIn?)` → the fault to answer with, or undefined to let it through.
+ * `deliverIn`: the ms the caller will wait before answering with it (or a
+ * function, called only for a fault); logs `deliveredAt` = `at` + that
+ * (withFaults passes its `latency`).
  * Each request goes onto window.__mockCalls as `METHOD /path`, `'error'` if
  * it faulted it, else `'ok'` (spared ones too: the app did call them).
  */
@@ -193,7 +199,7 @@ export const createFaultInjector = ({ rate, seed, spare = [/^\/mock\//], isWrite
   const call = (method: string, path: string, outcome: CallOutcome) => {
     if (typeof window !== 'undefined') (window.__mockCalls ??= []).push({ key: `${method.toUpperCase()} ${path}`, outcome, at: Date.now() });
   };
-  return (method: string, path: string): Fault | undefined => {
+  return (method: string, path: string, deliverIn?: number | (() => number)): Fault | undefined => {
     if (spare.some((re) => re.test(path)) || random() >= rate) {
       call(method, path, 'ok');
       return undefined;
@@ -203,7 +209,8 @@ export const createFaultInjector = ({ rate, seed, spare = [/^\/mock\//], isWrite
     if (typeof window !== 'undefined') {
       const logged: InjectedFault = { method: method.toUpperCase(), path, status: fault.status, at: Date.now() };
       if (isWrite) logged.write = isWrite(method, path);
-      if (delivered) logged.deliveredAt = logged.at;
+      if (deliverIn !== undefined) logged.deliveredAt = logged.at + Math.max(0, typeof deliverIn === 'function' ? deliverIn() : deliverIn);
+      else if (delivered) logged.deliveredAt = logged.at;
       (window.__mockFaults ??= []).push(logged);
     }
     return fault;

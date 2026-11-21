@@ -286,7 +286,7 @@ test('withFaults: in fuzz mode, every request is pending until it answers, fault
       await res;
       assert.equal(w.__mockPending, 0, `rate ${rate}`);
     }
-    // An injected fault answers at once: never left pending.
+    // Without a latency an injected fault answers at once: never left pending.
     await withFaults(ok, { VITE_MOCK_FAULT_RATE: '1' })('/orders', api, {});
     assert.equal(w.__mockPending, 0);
   }));
@@ -297,4 +297,66 @@ test('withFaults: at --faults 0 it fails nothing but still logs every call', () 
     for (let i = 0; i < 20; i++) assert.deepEqual(await bq('/orders', api, {}), { data: 'ok' });
     const calls = (w as { __mockCalls?: unknown[] }).__mockCalls ?? [];
     assert.equal(calls.length, 20);
+  }));
+
+// ------------------------------------------------------------ fault latency
+
+type FaultWindow = BusyWindow & { __mockFaults?: { at: number; deliveredAt?: number }[] };
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+test('withFaults: a fault takes `latency` ms, in flight meanwhile, logged at the start with deliveredAt', () =>
+  withWindow(async (win) => {
+    const w = win as FaultWindow;
+    const bq = withFaults(ok, { VITE_MOCK_FAULT_RATE: '1' }, { latency: 40 });
+    const started = Date.now();
+    const res = bq('/orders', api, {});
+    await sleep(10);
+    assert.equal(w.__mockPending, 1);
+    const [logged] = w.__mockFaults!;
+    assert.ok(logged!.at - started < 10, 'logged when the request starts');
+    assert.equal(logged!.deliveredAt, logged!.at + 40);
+    const out = await res;
+    assert.ok('error' in out && out.error);
+    assert.ok(Date.now() - started >= 39);
+    assert.equal(w.__mockPending, 0);
+  }));
+
+test('withFaults: latency defaults to VITE_MOCK_LATENCY_MS, or takes a function, called only for a fault', () =>
+  withWindow(async () => {
+    let calls = 0;
+    const thirty = () => (calls++, 30);
+    for (const [env, opts] of [
+      [{ VITE_MOCK_FAULT_RATE: '1', VITE_MOCK_LATENCY_MS: '30' }, {}],
+      [{ VITE_MOCK_FAULT_RATE: '1', VITE_MOCK_LATENCY_MS: '500' }, { latency: thirty }],
+    ] as const) {
+      const started = Date.now();
+      await withFaults(ok, env, opts)('/orders', api, {});
+      const took = Date.now() - started;
+      assert.ok(took >= 29 && took < 400, `took ${took}ms`);
+    }
+    assert.equal(calls, 1);
+    await withFaults(ok, { VITE_MOCK_FAULT_RATE: '0' }, { latency: thirty })('/orders', api, {});
+    assert.equal(calls, 1, 'not called for a request that goes through');
+  }));
+
+test('withFaults: a fault abandoned while it waits (abort) answers at once', () =>
+  withWindow(async (w) => {
+    const controller = new AbortController();
+    const res = withFaults(ok, { VITE_MOCK_FAULT_RATE: '1' }, { latency: 5000 })('/orders', { signal: controller.signal } as BaseQueryApi, {});
+    await sleep(5);
+    controller.abort();
+    const started = Date.now();
+    await res;
+    assert.ok(Date.now() - started < 100);
+    assert.equal(w.__mockPending, 0);
+  }));
+
+test('createFaultInjector: deliverIn stamps deliveredAt = at + it, and wins over `delivered`', () =>
+  withWindow((win) => {
+    const w = win as FaultWindow;
+    const inject = createFaultInjector({ rate: 1, seed: 1, delivered: true });
+    inject('POST', '/orders', 250);
+    inject('POST', '/orders', () => 100);
+    inject('POST', '/orders');
+    assert.deepEqual(w.__mockFaults!.map((f) => f.deliveredAt! - f.at), [250, 100, 0]);
   }));

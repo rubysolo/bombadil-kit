@@ -291,7 +291,7 @@ if (import.meta.env.VITE_FUZZ === 'true') installFuzzConsole();
 
 | module | env | does |
 |---|---|---|
-| `bombadil-kit/rtk` | `VITE_MOCK_FAULT_RATE`, `_SEED` | `withFaults(baseQuery, env, { spare, isWrite, onFault })`: fails that share of requests as 500, 503, 422, network error or timeout, chosen by a seeded PRNG, and counts every request in flight for `spinnersClear`. Returns `baseQuery` itself only when the variable is unset or empty: set to `0`, it fails nothing but still wraps |
+| `bombadil-kit/rtk` | `VITE_MOCK_FAULT_RATE`, `_SEED`, `VITE_MOCK_LATENCY_MS` | `withFaults(baseQuery, env, { spare, isWrite, onFault, latency })`: fails that share of requests as 500, 503, 422, network error or timeout, chosen by a seeded PRNG, and counts every request in flight for `spinnersClear`. A fault answers after `latency` ms (a number, or `() => number` called once per fault; default `VITE_MOCK_LATENCY_MS`, else 0), in flight meanwhile and logged with `deliveredAt` = `at` + that, so a failing request takes as long as a working one: match the wrapped baseQuery's own delay. Returns `baseQuery` itself only when the variable is unset or empty: set to `0`, it fails nothing but still wraps |
 | `bombadil-kit/faults` | same | `createFaultInjector({ rate, seed, spare, isWrite, delivered })`, for mock layers other than RTK Query (`delivered`: it answers with the fault at once); both log faults to `window.__mockFaults`, and every request (spared ones too) to `window.__mockCalls` as `METHOD /path`, `ok` or `error`. `startMockRequest()` per mocked request, its result called when it answers or is abandoned: requests in flight, for `spinnersClear` (`withFaults` does it in fuzz mode). `INJECTED_MARKER`: the text every built-in fault carries |
 | `bombadil-kit/faker` | `VITE_MOCK_SEED`, `VITE_MOCK_REF_DATE` | seeds the app's faker and its reference date; `mockRandom`/`mockNow` for the rest of the mock layer |
 | `bombadil-kit/console` | `VITE_FUZZ` | each `console.error` becomes one string with the source lines that raised it (Bombadil records only the first argument) |
@@ -303,12 +303,25 @@ itself:
 | field | |
 |---|---|
 | `method`, `path`, `status`, `at` | the request (`path` can be `Controller.method`), what it failed with, `Date.now()` when it started (for an error: when the failure reached the app, if the layer knows it; else when the call started, and set `deliveredAt`) |
-| `deliveredAt` | optional, for errors. `Date.now()` when the failure reached the app, when the layer logs it at the call's start (`at`) and answers after a delay (it may be in the future); failedWritesShown's `within` and the console `grace` count from it, and leaving before it (not `leaveGrace` after) drops a failed write. `withFaults` sets it to `at`; `createFaultInjector({ delivered: true })` does too, for a layer that answers at once |
+| `deliveredAt` | optional, for errors. `Date.now()` when the failure reached the app, when the layer logs it at the call's start (`at`) and answers after a delay (it may be in the future); failedWritesShown's `within` and the console `grace` count from it, and leaving before it (not `leaveGrace` after) drops a failed write. `withFaults` sets it to `at` plus its `latency`; `createFaultInjector` does from `inject(method, path, deliverIn)`, or to `at` with `{ delivered: true }`, for a layer that answers at once |
 | `write` | optional. Whether it changes data; overrides the `method !== 'GET'` guess. Transports without HTTP verbs set it; `isWrite(method, path)` on `withFaults`/`createFaultInjector` fills it |
 | `kind` | optional. `'error'` (the default): it failed. `'slow'`: it answered `delayMs` late. `'hang'`: it never answers; console errors are excused for `hangGrace` after `at`, not for the rest of the page, and spinners for the rest of it |
 | `delayMs` | optional, for `slow` |
 
-And per request, `const done = startMockRequest()` and `done()` when it answers, fails or is aborted: `window.__mockPending`. Without it, `spinnersClear` counts every second a spinner shows, and a slow request the walker keeps leaving looks stuck.
+And per request, `const done = startMockRequest()` and `done()` when it answers, fails or is aborted: `window.__mockPending`. Without it, `spinnersClear` counts every second a spinner shows, and a slow request the walker keeps leaving looks stuck. Count it in fuzz mode whatever the fault rate, `--faults 0` included, not only when `parseFaultConfig` returns a config.
+
+A layer that waits its own latency should answer a fault after that same wait, as a real request fails. Answered at once, a failing request never shows a spinner, and the walker never leaves before its error lands, so `spinnersClear`, `noBlankPage` and `failedWritesShown` never see those cases. Wrapped in `withFaults`, give it the same `latency` (or let both read `VITE_MOCK_LATENCY_MS`). With `createFaultInjector`, keep the fault inside the `startMockRequest()` span and pass the wait:
+
+```ts
+const done = startMockRequest();
+try {
+  const fault = inject(method, path, latency); // deliveredAt = at + latency
+  await sleep(latency);
+  return fault ? { error: fault } : answer(method, path, body);
+} finally {
+  done();
+}
+```
 
 For `consoleQuietUnlessFaulted({ injected })`, such a layer puts one marker
 in every failure it injects (`/Mock world injected failure/`), in the text the
