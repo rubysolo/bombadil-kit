@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline';
 import { fill, projectRoutes, readFlows, specsDir, type Flow, type Loaded, type ProjectConfig } from '../config.ts';
 import type { RunMeta } from '../report/runs.ts';
 import { generate } from '../report/generate.ts';
+import { summaryLine } from '../report/report.ts';
 
 export interface RunOptions {
   project: string;
@@ -368,8 +369,7 @@ export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
     // One report rebuild for all the flows: they are one sweep.
     try {
       const report = sweepReport(loaded, o.baseline);
-      const s = report.summary;
-      console.error(`sweep ${report.sweep.id}: ${s.new} new, ${s.open} open, ${s.quiet} quiet, ${s.closed} closed · ${s.routes[0]}/${s.routes[1]} routes`);
+      console.error(summaryLine(report));
       console.error(`→ ${join(out, 'report', 'index.html')}`);
     } catch (err) {
       console.error(`report: ${(err as Error).message}`);

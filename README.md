@@ -364,6 +364,17 @@ A sweep that didn't reach a finding's route says nothing about it. Delete
 route and unreached routes show; without it, ids in URLs are blurred to `:id`
 and `:n`.
 
+The header's ACTIONS and ROUTES add up every project as of its own latest
+sweep, so `run --project x` one at a time still shows the whole repo; it
+names the projects the latest sweep ran when that's not all of them. ROUTES,
+like the matrix and the coverage tab, is listed routes reached of those
+listed: a reached route the list lacks shows apart ("+3 not in the route
+list"), never in the total, so an incomplete list can't look covered.
+`report.json` has both scopes: `summary.all` and `summary.latest_sweep`
+(`projects`, `actions`, `routes`, `extra_routes`); `summary.actions` and
+`.routes` stay the latest sweep's. Each sweep's own numbers are in the
+project's history.
+
 **API coverage** (the coverage tab, beside routes; `report.json`'s
 `projects[].api`) lists each mock endpoint with its calls by outcome, the
 variants seen of those known, and the flows that called it, summed over every
