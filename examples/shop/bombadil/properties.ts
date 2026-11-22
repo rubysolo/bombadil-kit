@@ -35,7 +35,11 @@ apiCalls();
 // which ones each flow expects; explore reaching them shows as undeclared.
 milestones({
   added: (doc) => [...doc.querySelectorAll('main p')].some((p) => p.textContent?.startsWith('Added.')),
-  ordered: (doc) => /^Order \S+$/.test(doc.querySelector('main h1')?.textContent ?? '') && !!doc.querySelector('main p')?.textContent?.startsWith('Thanks,'),
+  // Only after the order was placed: a reload of an order page isn't one.
+  ordered: {
+    holds: (doc) => /^Order \S+$/.test(doc.querySelector('main h1')?.textContent ?? '') && !!doc.querySelector('main p')?.textContent?.startsWith('Thanks,'),
+    after: 'POST /orders',
+  },
 });
 // No lazy routes here, so nothing harmless to wait out: a clean sweep's
 // longest blank stretch is 0ms, and the walker leaves a blank cart in 100-550ms.
