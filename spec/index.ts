@@ -53,12 +53,13 @@ import {
 } from './faults.ts';
 import { hasSettled, persist, spinnerStuck, spinnerTime, type Persisted, type PersistStore, type SpinnerStore } from './settled.ts';
 import { freshApiCalls, type ApiSnapshot, type ApiWindow, type CallOutcome, type MockCall, type MockEndpoint } from './api.ts';
-import { reachedMilestones, type MilestonePredicate } from './milestones.ts';
+import { reachedMilestones, type MilestoneDef, type MilestonePredicate } from './milestones.ts';
 import { inFence } from './fence.ts';
 
 export {
   freshApiCalls,
   reachedMilestones,
+  type MilestoneDef,
   type MilestonePredicate,
   type ApiSnapshot,
   type CallOutcome,
@@ -480,7 +481,8 @@ export const noBlankPage = ({
  *
  * Reads window.__mockCalls (bombadil-kit/faults' createFaultInjector fills
  * it; a mock layer of the app's own can too) and, once per document,
- * window.__mockEndpoints, the inventory.
+ * window.__mockEndpoints, the inventory. A log that drops its oldest entries
+ * needs `seq` on each (MockCall); without it the log must only grow.
  */
 export const apiCalls = () => {
   const api = extract((state) => freshApiCalls(state.window as ApiWindow));
@@ -505,8 +507,12 @@ export const apiCalls = () => {
  *
  * A milestone is where the workflow got done, not where it went: a page
  * reached is route coverage; a save dispatched isn't a save that completed.
+ * `{ holds, after }` also needs an `ok` call to `after` (a __mockCalls key:
+ * a string, whole, or a RegExp) since `holds` last went false:
+ *
+ *   saved: { holds: (doc) => !!doc.querySelector('.saved'), after: 'AccountController.save' },
  */
-export const milestones = (defs: Record<string, MilestonePredicate>) => {
+export const milestones = (defs: Record<string, MilestoneDef>) => {
   const reached = extract((state) => reachedMilestones(defs, state.document, state.window));
   // The report reads the snapshot by this name (see apiCalls).
   const named = reached as typeof reached & { named?: (name: string) => unknown };

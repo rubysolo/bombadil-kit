@@ -114,3 +114,43 @@ test('no milestones tab without milestone data', () => {
   assert.doesNotMatch(page, /MILESTONES/);
   assert.match(rendered(withMilestones(), '#/p/web/milestones'), /RUN \(LATEST SWEEP\)/, 'an unknown tab falls back to sweeps');
 });
+
+test("the header counts every project's latest state, names the latest sweep's, and keeps unlisted routes apart", () => {
+  const p = (name: string, last_sweep: number, routes: { template: string; states: number; known: boolean }[]) =>
+    ({ name, spec: 's.ts', target: {}, last_sweep, actions: 10, properties: [], runs: [], history: [], routes });
+  const r = {
+    ...report,
+    sweep: { id: 2, at: 't', commits: ['c'] },
+    summary: {
+      ...report.summary, actions: 10, routes: [1, 1],
+      latest_sweep: { projects: ['upload'], actions: 10, routes: [1, 1], extra_routes: 0 },
+      all: { projects: ['orders', 'upload'], actions: 1234, routes: [2, 5], extra_routes: 3 },
+    },
+    projects: [
+      p('orders', 1, [
+        { template: '/a', states: 4, known: true }, { template: '/b', states: 0, known: true },
+        { template: '/c', states: 0, known: true }, { template: '/d', states: 0, known: true },
+        { template: '/x', states: 2, known: false }, { template: '/y', states: 1, known: false }, { template: '/z', states: 1, known: false },
+      ]),
+      p('upload', 2, [{ template: '/u', states: 3, known: true }]),
+    ],
+  } as Report;
+
+  const home = rendered(r, '');
+  assert.match(home, /<span class="k">ACTIONS<\/span><span class="v">1,234<\/span>/);
+  assert.match(home, /<span class="k">ROUTES<\/span><span class="v">2\/5<\/span>/);
+  assert.match(home, /\+3 not in the route list/);
+  assert.match(home, /<small>all projects · latest sweep: upload<\/small>/);
+  // The matrix: orders reached 1 of its 4 listed routes, plus 3 unlisted.
+  assert.match(home, /<span class="dim">1\/4<\/span> <small class="dim" title="3 not in the route list">\+3<\/small>/);
+
+  const coverage = rendered(r, '#/p/orders/coverage');
+  assert.match(coverage, /COVERAGE 1\/4/);
+  assert.match(coverage, /<h2>Routes<\/h2><span[^>]*>1\/4 routes reached · \+3 not in the route list/);
+});
+
+test('a report.json from before summary.all renders its latest-sweep numbers', () => {
+  const home = rendered({ ...report, summary: { ...report.summary, actions: 7, routes: [2, 3] } }, '');
+  assert.match(home, /<span class="k">ACTIONS<\/span><span class="v">7<\/span>/);
+  assert.match(home, /<span class="k">ROUTES<\/span><span class="v">2\/3<\/span>/);
+});

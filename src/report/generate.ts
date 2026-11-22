@@ -1,7 +1,8 @@
-import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync } from 'node:fs';
 import { basename, join, relative } from 'node:path';
 import { renderHtml } from './html.ts';
 import { projectInfo, type ProjectInfo } from './project.ts';
+import { withLock, writeAtomic } from './lock.ts';
 import { buildReport, type Report } from './report.ts';
 import { listRuns, readRun, type RunMeta, type RunResult } from './runs.ts';
 import { applySweep, emptyState, type FindingRecord, type State } from './state.ts';
@@ -36,6 +37,11 @@ const readState = (path: string): State => (existsSync(path) ? (JSON.parse(readF
  */
 export const generate = (opts: GenerateOptions): { report: Report; exitCode: number } => {
   mkdirSync(opts.out, { recursive: true });
+  // Read, fold and write under one lock, so concurrent builds take turns.
+  return withLock(join(opts.out, 'state.json.lock'), () => build(opts));
+};
+
+const build = (opts: GenerateOptions): { report: Report; exitCode: number } => {
   const statePath = join(opts.out, 'state.json');
   let state = existsSync(statePath) || !opts.baseline ? readState(statePath) : readState(opts.baseline);
 
@@ -75,10 +81,10 @@ export const generate = (opts: GenerateOptions): { report: Report; exitCode: num
     runsDir: relative(opts.repoRoot, opts.runsRoot) || '.',
   });
 
-  writeFileSync(statePath, JSON.stringify(state, null, 2) + '\n');
-  writeFileSync(join(opts.out, 'report.json'), JSON.stringify(report, null, 2) + '\n');
-  writeFileSync(join(opts.out, 'findings.ndjson'), report.findings.map((f) => JSON.stringify(f)).join('\n') + (report.findings.length ? '\n' : ''));
-  writeFileSync(join(opts.out, 'index.html'), renderHtml(report, opts.title));
+  writeAtomic(statePath, JSON.stringify(state, null, 2) + '\n');
+  writeAtomic(join(opts.out, 'report.json'), JSON.stringify(report, null, 2) + '\n');
+  writeAtomic(join(opts.out, 'findings.ndjson'), report.findings.map((f) => JSON.stringify(f)).join('\n') + (report.findings.length ? '\n' : ''));
+  writeAtomic(join(opts.out, 'index.html'), renderHtml(report, opts.title));
 
   // coverage.json: what each flow rendered, for picking the flows a diff touches
   // (affected.ts). Files deleted since a run rendered them are dropped.
@@ -92,7 +98,7 @@ export const generate = (opts: GenerateOptions): { report: Report; exitCode: num
       },
     ]),
   );
-  writeFileSync(
+  writeAtomic(
     join(opts.out, 'coverage.json'),
     JSON.stringify({ schema: 'bombadil-coverage/v1', generated_at: opts.now, projects }, null, 2) + '\n',
   );

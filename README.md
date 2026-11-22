@@ -98,6 +98,7 @@ npx bombadil-kit run --seed 1234 --ref-date 2026-11-19   # same mock data and fa
 npx bombadil-kit run -- --exit-on-violation  # everything after -- goes to Bombadil
 npx bombadil-kit run --reproduce tmp/bombadil/runs/web/<run>  # replay that run's trace
 npx bombadil-kit run --reuse-server          # a server already on the port, left running
+npx bombadil-kit run --project web --no-report  # leave the runs for one `report` later
 npx bombadil-kit run --width 1280 --height 800 # desktop
 npx bombadil-kit list                          # the flows
 npx bombadil-kit report --fail-on new          # exit 1 if the latest sweep found something new
@@ -202,6 +203,16 @@ milestones({
   is false. The `milestones` snapshot gets the names that turned true:
   edge-triggered per document, so a banner that stays up counts once, and
   again only after it went away.
+- `{ holds, after }` also needs an `ok` call in `window.__mockCalls` whose
+  `key` is `after` (a string, whole; or a RegExp) since `holds` last went
+  false, or since the page loaded. A banner left from an earlier save, or a
+  save the mock answered with an error, isn't reached:
+
+  ```ts
+  milestones({
+    saved: { holds: (doc) => !!doc.querySelector('[role="status"].saved'), after: 'AccountController.save' },
+  });
+  ```
 - The report's milestones tab (`report.json`'s `projects[].milestones`), per
   flow, as of the latest sweep it ran in: each expected milestone, times
   reached, and a strip of the sweeps before; milestones reached but not
@@ -237,7 +248,7 @@ bundle declare `x` twice, and the spec won't load.
 | `spinnersClear({ selector, within, share, exclude, key })` | no path shows a stuck spinner: per path, spinner time added up across visits (a walker never stays long on a page; a stuck spinner shows on every visit) until the path shows without one. Stuck: over `within` (15s) with no mock request in flight, and at least `share` (0.1) of its spinner time. A slow request the walker keeps abandoning isn't stuck however long the sweep. The in-flight count comes from `withFaults` or `startMockRequest`; without it every spinner second is idle and `within` alone decides, so keep it large. Time a slow fault is in flight (`at` to `at + delayMs`) isn't idle; once a hang was injected on the page, its spinner time counts nowhere (so a reload into a healthy world starts clean). Spinners inside `exclude` (a selector: a modal meant to show 30s of progress) don't count. In flight means any mock request: while an unrelated long one runs (polling, a slow fault elsewhere) a stuck spinner counts as busy, and that time is missed. `key` picks the tally a page adds to (default `loc.pathname`; `loc => loc.pathname + loc.search` for pages that route on the query string) |
 | `noLeakedText(pattern?)` | no `undefined`, `NaN`, `[object Object]`, `Invalid Date`, `null` in the text |
 | `noSidewaysScroll(tolerance?)` | the page never scrolls horizontally |
-| `failedWritesShown({ quiet, errorSelector, within, leaveGrace, request })` | a write the fault injector failed shows a visible error on the page the user is on when it fails, within 5s and before they leave (leaving before the error could reach the app drops it: before its `deliveredAt`, or without one within `leaveGrace`, default 1000ms, of when it was first seen); an alert on another page doesn't count, and one alert per write will do (a retry or Dismiss may clear it). Slow and hung writes don't count. One finding per endpoint and page: the id is `request(method, path)`, by default the path with record segments as `:id` (`POST /orders/:id/design_requests`), not the status or the record |
+| `failedWritesShown({ quiet, errorSelector, within, leaveGrace, request })` | a write the fault injector failed shows a visible error on the page the user is on when it fails, within 5s and before they leave (leaving before the error could reach the app drops it: with no state on its page captured at or after its `deliveredAt`, or without one within `leaveGrace`, default 1000ms, of when it was first seen); an alert on another page doesn't count, and one alert per write will do (a retry or Dismiss may clear it). Slow and hung writes don't count. One finding per endpoint and page: the id is `request(method, path)`, by default the path with record segments as `:id` (`POST /orders/:id/design_requests`), not the status or the record |
 | `consoleQuietUnlessFaulted(grace?, hangGrace?)` | no console error, except within 5s of an injected error (of its `deliveredAt`, if set), 5s after a slow response answers, or `hangGrace` (default `grace`) after a hang started; also takes `{ grace, hangGrace }` |
 | `consoleQuietUnlessFaulted({ injected })` | no console error, except one whose text matches `injected` (the marker the mock layer puts in what it injects), whenever it lands; with the built-in injector, `new RegExp(INJECTED_MARKER)`. Needs `installFuzzConsole` when the marker is inside a logged object: Bombadil records those as `"Object"` |
 | `nothingUnder({ selector, container })` | no text is drawn over, say, a floating header's logo |
@@ -291,7 +302,7 @@ if (import.meta.env.VITE_FUZZ === 'true') installFuzzConsole();
 
 | module | env | does |
 |---|---|---|
-| `bombadil-kit/rtk` | `VITE_MOCK_FAULT_RATE`, `_SEED` | `withFaults(baseQuery, env, { spare, isWrite, onFault })`: fails that share of requests as 500, 503, 422, network error or timeout, chosen by a seeded PRNG, and counts every request in flight for `spinnersClear`. Returns `baseQuery` itself only when the variable is unset or empty: set to `0`, it fails nothing but still wraps |
+| `bombadil-kit/rtk` | `VITE_MOCK_FAULT_RATE`, `_SEED`, `VITE_MOCK_LATENCY_MS` | `withFaults(baseQuery, env, { spare, isWrite, onFault, latency })`: fails that share of requests as 500, 503, 422, network error or timeout, chosen by a seeded PRNG, and counts every request in flight for `spinnersClear`. A fault answers after `latency` ms (a number, or `() => number` called once per fault; default `VITE_MOCK_LATENCY_MS`, else 0), in flight meanwhile and logged with `deliveredAt` = `at` + that, so a failing request takes as long as a working one: match the wrapped baseQuery's own delay. Returns `baseQuery` itself only when the variable is unset or empty: set to `0`, it fails nothing but still wraps |
 | `bombadil-kit/faults` | same | `createFaultInjector({ rate, seed, spare, isWrite, delivered })`, for mock layers other than RTK Query (`delivered`: it answers with the fault at once); both log faults to `window.__mockFaults`, and every request (spared ones too) to `window.__mockCalls` as `METHOD /path`, `ok` or `error`. `startMockRequest()` per mocked request, its result called when it answers or is abandoned: requests in flight, for `spinnersClear` (`withFaults` does it in fuzz mode). `INJECTED_MARKER`: the text every built-in fault carries |
 | `bombadil-kit/faker` | `VITE_MOCK_SEED`, `VITE_MOCK_REF_DATE` | seeds the app's faker and its reference date; `mockRandom`/`mockNow` for the rest of the mock layer |
 | `bombadil-kit/console` | `VITE_FUZZ` | each `console.error` becomes one string with the source lines that raised it (Bombadil records only the first argument) |
@@ -303,12 +314,25 @@ itself:
 | field | |
 |---|---|
 | `method`, `path`, `status`, `at` | the request (`path` can be `Controller.method`), what it failed with, `Date.now()` when it started (for an error: when the failure reached the app, if the layer knows it; else when the call started, and set `deliveredAt`) |
-| `deliveredAt` | optional, for errors. `Date.now()` when the failure reached the app, when the layer logs it at the call's start (`at`) and answers after a delay (it may be in the future); failedWritesShown's `within` and the console `grace` count from it, and leaving before it (not `leaveGrace` after) drops a failed write. `withFaults` sets it to `at`; `createFaultInjector({ delivered: true })` does too, for a layer that answers at once |
+| `deliveredAt` | optional, for errors. `Date.now()` when the failure reached the app, when the layer logs it at the call's start (`at`) and answers after a delay (it may be in the future); failedWritesShown's `within` and the console `grace` count from it, and leaving before a state on its page is captured at or after it (not `leaveGrace` after) drops a failed write. `withFaults` sets it to `at` plus its `latency`; `createFaultInjector` does from `inject(method, path, deliverIn)`, or to `at` with `{ delivered: true }`, for a layer that answers at once |
 | `write` | optional. Whether it changes data; overrides the `method !== 'GET'` guess. Transports without HTTP verbs set it; `isWrite(method, path)` on `withFaults`/`createFaultInjector` fills it |
 | `kind` | optional. `'error'` (the default): it failed. `'slow'`: it answered `delayMs` late. `'hang'`: it never answers; console errors are excused for `hangGrace` after `at`, not for the rest of the page, and spinners for the rest of it |
 | `delayMs` | optional, for `slow` |
 
-And per request, `const done = startMockRequest()` and `done()` when it answers, fails or is aborted: `window.__mockPending`. Without it, `spinnersClear` counts every second a spinner shows, and a slow request the walker keeps leaving looks stuck.
+And per request, `const done = startMockRequest()` and `done()` when it answers, fails or is aborted: `window.__mockPending`. Without it, `spinnersClear` counts every second a spinner shows, and a slow request the walker keeps leaving looks stuck. Count it in fuzz mode whatever the fault rate, `--faults 0` included, not only when `parseFaultConfig` returns a config.
+
+A layer that waits its own latency should answer a fault after that same wait, as a real request fails. Answered at once, a failing request never shows a spinner, and the walker never leaves before its error lands, so `spinnersClear`, `noBlankPage` and `failedWritesShown` never see those cases. Wrapped in `withFaults`, give it the same `latency` (or let both read `VITE_MOCK_LATENCY_MS`). With `createFaultInjector`, keep the fault inside the `startMockRequest()` span and pass the wait:
+
+```ts
+const done = startMockRequest();
+try {
+  const fault = inject(method, path, latency); // deliveredAt = at + latency
+  await sleep(latency);
+  return fault ? { error: fault } : answer(method, path, body);
+} finally {
+  done();
+}
+```
 
 For `consoleQuietUnlessFaulted({ injected })`, such a layer puts one marker
 in every failure it injects (`/Mock world injected failure/`), in the text the
@@ -323,6 +347,7 @@ entry per call (`withFaults`/`createFaultInjector` do, while faults are on):
 | `variant` | optional. The named response it answered with (`empty`, `locked`) |
 | `outcome` | `'ok'`, `'error'`, `'slow'` or `'hang'` |
 | `at` | `Date.now()` when it was called |
+| `seq` | optional. Counts up per call, across the page (`createFaultInjector` sets it). With it the log may be capped (push, then shift the oldest); without it the log must only grow, or the calls past the cap go uncounted |
 
 `window.__mockEndpoints`, `{ key, variants }[]`, optional, is the inventory:
 endpoints no flow called show in the report, dimmed.
@@ -351,6 +376,12 @@ message), digits blurred, so repeats land on the same id.
 A **sweep** is one report build: every run it hasn't seen yet. `run` builds
 once per invocation, so all its flows are one sweep.
 
+Builds take turns on `state.json.lock` in the report folder, and every file is
+written whole, so `run`s that finish at once don't lose each other's sweeps.
+Each one still makes its own sweep. To make several runs one sweep (projects in
+parallel, CI jobs whose `runs/` you gather into one folder), run them with
+`--no-report`, then `report` once; `--baseline` goes on the `report`.
+
 | status | means |
 |---|---|
 | `new` | seen in the latest sweep and never before |
@@ -363,6 +394,17 @@ A sweep that didn't reach a finding's route says nothing about it. Delete
 `routes`) lists the app's route patterns (`/orders/:id`), so URLs group by
 route and unreached routes show; without it, ids in URLs are blurred to `:id`
 and `:n`.
+
+The header's ACTIONS and ROUTES add up every project as of its own latest
+sweep, so `run --project x` one at a time still shows the whole repo; it
+names the projects the latest sweep ran when that's not all of them. ROUTES,
+like the matrix and the coverage tab, is listed routes reached of those
+listed: a reached route the list lacks shows apart ("+3 not in the route
+list"), never in the total, so an incomplete list can't look covered.
+`report.json` has both scopes: `summary.all` and `summary.latest_sweep`
+(`projects`, `actions`, `routes`, `extra_routes`); `summary.actions` and
+`.routes` stay the latest sweep's. Each sweep's own numbers are in the
+project's history.
 
 **API coverage** (the coverage tab, beside routes; `report.json`'s
 `projects[].api`) lists each mock endpoint with its calls by outcome, the

@@ -187,12 +187,29 @@ test('unannouncedWrite: with `deliveredAt`, leaving before delivery drops it and
   // Leaving after delivery without an alert: unannounced, with no leaveGrace on top (the layer said when).
   const late = watch();
   assert.equal(unannouncedWrite(late, [f], t + 10, [], 1, false), null);
+  assert.equal(unannouncedWrite(late, [f], t + 3050, [], 1, false), null);
   assert.equal(lineOf(unannouncedWrite(late, [f], t + 3100, [], 2, false)), line);
   // Delivered when logged (withFaults): leaving at +40ms is unannounced, as before leaveGrace.
   const now = fault({ deliveredAt: t });
   const quick = watch();
   assert.equal(unannouncedWrite(quick, [now], t + 10, [], 1, false), null);
   assert.equal(lineOf(unannouncedWrite(quick, [now], t + 40, [], 2, false)), line);
+});
+
+test('unannouncedWrite: with `deliveredAt`, left means no state on its page was captured after delivery', () => {
+  // withFaults with 50ms latency: Save at +0, the walker clicks away at +30,
+  // the next page is first captured at +60. The error landed at +50, after
+  // the walker was gone, though the capture that shows it left comes later.
+  const f = fault({ deliveredAt: t + 50 });
+  const w = watch();
+  assert.equal(unannouncedWrite(w, [f], t + 10, [], 1, false), null);
+  assert.equal(unannouncedWrite(w, [f], t + 60, [], 2, false), null);
+  assert.deepEqual(w.pending, []);
+  // A state on its page at or after delivery: owed from then on.
+  const seen = watch();
+  assert.equal(unannouncedWrite(seen, [f], t + 10, [], 1, false), null);
+  assert.equal(unannouncedWrite(seen, [f], t + 50, [], 1, false), null);
+  assert.equal(lineOf(unannouncedWrite(seen, [f], t + 90, [], 2, false)), line);
 });
 
 test('unannouncedWrite: no alert within `within` ms on that page is unannounced', () => {

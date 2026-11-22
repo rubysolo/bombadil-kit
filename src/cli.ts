@@ -7,6 +7,7 @@
 //   bombadil-kit run -- --exit-on-violation             hand the rest to Bombadil
 //   bombadil-kit run --reproduce tmp/bombadil/runs/web/<run>  replay that run
 //   bombadil-kit run --reuse-server                use a server already on the port
+//   bombadil-kit run --project a --no-report &      parallel sweeps: then one `report`
 //   bombadil-kit run --baseline main/state.json --no-sandbox   (CI)
 //   bombadil-kit list                        the flows
 //   bombadil-kit report [--fail-on new|open] [--baseline state.json]
@@ -22,6 +23,7 @@ import { parseArgs } from 'node:util';
 import { loadConfig, pickProject, projectRoutes, readFlows, type Loaded, type ProjectConfig } from './config.ts';
 import { projectAffected } from './affected/project.ts';
 import { generate, type FailOn } from './report/generate.ts';
+import { summaryLine } from './report/report.ts';
 import { run } from './runner/run.ts';
 
 // The comment block at the top of this file.
@@ -70,6 +72,7 @@ const cmdRun = async (loaded: Loaded, argv: string[]) => {
       port: { type: 'string' },
       reproduce: { type: 'string' },
       'reuse-server': { type: 'boolean', default: false },
+      'no-report': { type: 'boolean', default: false },
     },
     // Everything after `--` is Bombadil's: parseArgs stops at the separator, so
     // the tail is read from argv, where `--` still stands (see tail()).
@@ -95,6 +98,7 @@ const cmdRun = async (loaded: Loaded, argv: string[]) => {
     bombadilArgs: tail(argv),
     reproduce: values.reproduce,
     reuseServer: values['reuse-server'],
+    report: !values['no-report'],
   });
 };
 
@@ -128,8 +132,7 @@ const cmdReport = (loaded: Loaded, argv: string[]) => {
     baseline: values.baseline && resolve(values.baseline),
     routes: projectRoutes(loaded),
   });
-  const s = report.summary;
-  console.error(`sweep ${report.sweep.id}: ${s.new} new, ${s.open} open, ${s.quiet} quiet, ${s.closed} closed · ${s.routes[0]}/${s.routes[1]} routes`);
+  console.error(summaryLine(report));
   console.error(`→ ${join(resolve(values.out), 'index.html')}`);
   return exitCode;
 };

@@ -43,7 +43,8 @@ test('buildReport derives statuses, the property matrix and route coverage', () 
   }, { generatedAt: 'now', evidence: (f) => f.last.frames.map((_, i) => `evidence/${f.id}/${i}.jpeg`) });
 
   assert.equal(report.schema, 'bombadil-report/v1');
-  assert.deepEqual(report.summary, { new: 0, open: 1, quiet: 1, closed: 0, actions: 100, routes: [2, 3] });
+  const web = { projects: ['web'], actions: 100, routes: [2, 3], extra_routes: 0 };
+  assert.deepEqual(report.summary, { new: 0, open: 1, quiet: 1, closed: 0, actions: 100, routes: [2, 3], latest_sweep: web, all: web });
 
   const p = report.projects[0]!;
   assert.equal(p.name, 'web');
@@ -181,4 +182,42 @@ test('a replay is listed with its runs but is no sweep: it reaches routes withou
   report = buildReport(s, { web: { properties: [], routes: ['/cart'] } }, { generatedAt: 'now', evidence: () => [] });
   assert.equal(report.findings[0]!.clean_sweeps, 1);
   assert.deepEqual(report.projects[0]!.runs.map((r) => r.id), ['web/r2', 'web/p4']);
+});
+
+const projectRun = (project: string, id: string, actions: number, routes: Record<string, number>): RunResult => ({
+  ...run(id, []),
+  id: `${project}/${id}`,
+  dir: `/runs/${project}/${id}`,
+  meta: { ...run(id, []).meta, project },
+  actions,
+  routes,
+});
+
+test("the summary adds up every project's latest state, and says what the latest sweep alone covered", () => {
+  let s = emptyState();
+  s = applySweep(s, [projectRun('orders', 'r1', 120, { '/a': 5, '/b': 1 })], 't1');
+  s = applySweep(s, [projectRun('upload', 'r2', 30, { '/x': 4 })], 't2');
+  const report = buildReport(s, {
+    orders: { properties: [], routes: ['/a', '/b', '/c', '/d'] },
+    upload: { properties: [], routes: ['/x'] },
+  }, { generatedAt: 'now', evidence: () => [] });
+
+  assert.deepEqual(report.summary.all, { projects: ['orders', 'upload'], actions: 150, routes: [3, 5], extra_routes: 0 });
+  assert.deepEqual(report.summary.latest_sweep, { projects: ['upload'], actions: 30, routes: [1, 1], extra_routes: 0 });
+  // What `actions` and `routes` always meant: the latest sweep's.
+  assert.equal(report.summary.actions, 30);
+  assert.deepEqual(report.summary.routes, [1, 1]);
+  // The per-sweep numbers stay in each project's history.
+  assert.deepEqual(report.projects.map((p) => p.history.map((h) => h.actions)), [[120], [30]]);
+});
+
+test('routes not in the route list are counted apart, not in the coverage total', () => {
+  let s = emptyState();
+  s = applySweep(s, [projectRun('web', 'r1', 10, { '/login': 5, '/orders/:id': 2, '/debug': 1, '/x': 1 })], 't1');
+  const report = buildReport(s, { web: { properties: [], routes: ['/login', '/orders/:id', '/cart', '/finalize'] } }, { generatedAt: 'now', evidence: () => [] });
+
+  assert.deepEqual(report.summary.routes, [2, 4]);
+  assert.deepEqual(report.summary.all, { projects: ['web'], actions: 10, routes: [2, 4], extra_routes: 2 });
+  // The project still lists them, marked, for the coverage tab.
+  assert.deepEqual(report.projects[0]!.routes.filter((r) => !r.known).map((r) => r.template), ['/debug', '/x']);
 });

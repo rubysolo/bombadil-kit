@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fill, findConfig, loadConfig, pickProject, projectRoutes, readFlows } from '../src/config.ts';
-import { bombadilArgs, replayCommand, replayProject, reproOptions, rerunCommand, runTarget, serverChoice, sweepReport, sweepSettings } from '../src/runner/run.ts';
+import { bombadilArgs, replayCommand, replayProject, reproOptions, rerunCommand, runTarget, serverChoice, waitForServer, sweepEnd, sweepReport, sweepSettings } from '../src/runner/run.ts';
 import { ownArgs, tail as cliTail } from '../src/cli.ts';
 import { selectFlows } from '../src/runner/run.ts';
 import { row, tmp, writeRun } from './helpers.ts';
@@ -161,6 +161,28 @@ test('serverChoice: a free port is spawned on; one in use is an error unless reu
   assert.throws(() => serverChoice(true, false, 'http://127.0.0.1:5199'), /already serving http:\/\/127\.0\.0\.1:5199.*--reuse-server/);
 });
 
+// A fake clock: each sleep advances it, so the server's answers and exits follow time, not wall time.
+const fakeServer = ({ answersAt = Infinity, exitsAt = Infinity }: { answersAt?: number; exitsAt?: number }) => {
+  let now = 0;
+  return {
+    ready: async () => now >= answersAt,
+    exited: () => now >= exitsAt,
+    sleep: async (ms: number) => void (now += ms),
+  };
+};
+
+test('waitForServer: ready once something answers and the spawned server is still running after `settle`', async () => {
+  assert.equal(await waitForServer({ ...fakeServer({ answersAt: 1500 }), interval: 500, settle: 1000 }), 'ready');
+  assert.equal(await waitForServer({ ...fakeServer({ exitsAt: 1000 }), interval: 500 }), 'exited');
+  assert.equal(await waitForServer({ ...fakeServer({}), tries: 4, interval: 500 }), 'timeout');
+});
+
+test('waitForServer: another server took the port after the check: it answers, ours exits, and that is not ready', async () => {
+  // Something answers at once (another worktree's dev server), and the one we
+  // spawned dies on --strictPort 300ms later: sweeping would test the wrong app.
+  assert.equal(await waitForServer({ ...fakeServer({ answersAt: 0, exitsAt: 300 }), interval: 500, settle: 1000 }), 'taken');
+});
+
 const meta = {
   schema: 'bombadil-run/v1',
   project: 'web',
@@ -241,6 +263,23 @@ test("the report a sweep rebuilds uses each project's routes, as `report` does",
 
   const report = sweepReport(loaded, undefined, '2026-11-19T20:00:00Z');
   assert.deepEqual(report.projects[0]!.routes.filter((r) => r.known).map((r) => r.template).sort(), ['/from-config', '/login']);
+});
+
+test('sweepEnd: rebuilds the report, or with --no-report leaves the runs for one `report` later', () => {
+  const root = tmp();
+  mkdirSync(join(root, 'apps/web/bombadil'), { recursive: true });
+  writeFileSync(join(root, 'apps/web/bombadil/spec.ts'), "export { noLeakedValues } from './properties.ts';\n");
+  writeFileSync(join(root, 'bombadil-kit.json'), JSON.stringify({ projects: { web: { dir: 'apps/web', server: { command: ['vite'] } } } }));
+  const loaded = loadConfig(join(root, 'bombadil-kit.json'));
+  writeRun(join(loaded.out, 'runs'), { id: '20261119-192622-s1', rows: [row(0, '/login', null)] });
+
+  const skipped = sweepEnd(loaded, { report: false });
+  assert.ok(!existsSync(join(loaded.out, 'report', 'state.json')));
+  assert.match(skipped.join('\n'), /--no-report: .*bombadil-kit report/);
+
+  const built = sweepEnd(loaded, {});
+  assert.ok(existsSync(join(loaded.out, 'report', 'state.json')));
+  assert.match(built[0]!, /^sweep 1: /);
 });
 
 test('projectRoutes: repo-relative paths, projects without routes left out', () => {

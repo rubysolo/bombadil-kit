@@ -59,7 +59,10 @@ In the app, behind the env vars `bombadil-kit.json` sets:
 - **Console.** `if (import.meta.env.VITE_FUZZ === 'true') installFuzzConsole()`
   from `bombadil-kit/console`, early in `main.tsx`.
 - **Latency.** If the mock layer has a delay, read it from the env too
-  (`{latency}`), 50 ms is a good fuzzing default.
+  (`{latency}`), 50 ms is a good fuzzing default. Faults take it too:
+  `withFaults` waits `VITE_MOCK_LATENCY_MS` (or its `latency` option)
+  before answering one; with `createFaultInjector`, answer after the
+  layer's wait and pass it as `deliverIn` (README, In the app).
 
 Unit-test the wiring the way the repo tests things (the fault wrapper is
 off without the env var; the seed makes data repeat).

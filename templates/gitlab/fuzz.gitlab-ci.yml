@@ -183,7 +183,8 @@ fuzz:
         node -e '
           const r = require("./bombadil-report/report.json");
           const s = r.summary;
-          console.log(`**${s.new} new**, ${s.open} open, ${s.quiet} quiet, ${s.closed} closed · ${s.routes[0]}/${s.routes[1]} routes`);
+          const c = s.all ?? { routes: s.routes, extra_routes: 0 };
+          console.log(`**${s.new} new**, ${s.open} open, ${s.quiet} quiet, ${s.closed} closed · ${c.routes[0]}/${c.routes[1]} routes${c.extra_routes ? ` (+${c.extra_routes} not in the route list)` : ""}`);
           for (const f of r.findings.filter((f) => f.status === "new"))
             console.log(`- \`${f.id}\` ${f.property} on \`${f.route}\`: ${(f.summary.split("\n")[0] || "").slice(0, 140)}`);
           console.log("\nDownload the Bombadil report artifact and open index.html.");'
