@@ -7,6 +7,7 @@
 //   bombadil-kit run -- --exit-on-violation             hand the rest to Bombadil
 //   bombadil-kit run --reproduce tmp/bombadil/runs/web/<run>  replay that run
 //   bombadil-kit run --reuse-server                use a server already on the port
+//   bombadil-kit run --project a --no-report &      parallel sweeps: then one `report`
 //   bombadil-kit run --baseline main/state.json --no-sandbox   (CI)
 //   bombadil-kit list                        the flows
 //   bombadil-kit report [--fail-on new|open] [--baseline state.json]
@@ -70,6 +71,7 @@ const cmdRun = async (loaded: Loaded, argv: string[]) => {
       port: { type: 'string' },
       reproduce: { type: 'string' },
       'reuse-server': { type: 'boolean', default: false },
+      'no-report': { type: 'boolean', default: false },
     },
     // Everything after `--` is Bombadil's: parseArgs stops at the separator, so
     // the tail is read from argv, where `--` still stands (see tail()).
@@ -95,6 +97,7 @@ const cmdRun = async (loaded: Loaded, argv: string[]) => {
     bombadilArgs: tail(argv),
     reproduce: values.reproduce,
     reuseServer: values['reuse-server'],
+    report: !values['no-report'],
   });
 };
 

@@ -1,9 +1,9 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdirSync, writeFileSync } from 'node:fs';
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fill, findConfig, loadConfig, pickProject, projectRoutes, readFlows } from '../src/config.ts';
-import { bombadilArgs, replayCommand, replayProject, reproOptions, rerunCommand, runTarget, serverChoice, sweepReport, sweepSettings } from '../src/runner/run.ts';
+import { bombadilArgs, replayCommand, replayProject, reproOptions, rerunCommand, runTarget, serverChoice, sweepEnd, sweepReport, sweepSettings } from '../src/runner/run.ts';
 import { ownArgs, tail as cliTail } from '../src/cli.ts';
 import { selectFlows } from '../src/runner/run.ts';
 import { row, tmp, writeRun } from './helpers.ts';
@@ -241,6 +241,23 @@ test("the report a sweep rebuilds uses each project's routes, as `report` does",
 
   const report = sweepReport(loaded, undefined, '2026-11-19T20:00:00Z');
   assert.deepEqual(report.projects[0]!.routes.filter((r) => r.known).map((r) => r.template).sort(), ['/from-config', '/login']);
+});
+
+test('sweepEnd: rebuilds the report, or with --no-report leaves the runs for one `report` later', () => {
+  const root = tmp();
+  mkdirSync(join(root, 'apps/web/bombadil'), { recursive: true });
+  writeFileSync(join(root, 'apps/web/bombadil/spec.ts'), "export { noLeakedValues } from './properties.ts';\n");
+  writeFileSync(join(root, 'bombadil-kit.json'), JSON.stringify({ projects: { web: { dir: 'apps/web', server: { command: ['vite'] } } } }));
+  const loaded = loadConfig(join(root, 'bombadil-kit.json'));
+  writeRun(join(loaded.out, 'runs'), { id: '20261119-192622-s1', rows: [row(0, '/login', null)] });
+
+  const skipped = sweepEnd(loaded, { report: false });
+  assert.ok(!existsSync(join(loaded.out, 'report', 'state.json')));
+  assert.match(skipped.join('\n'), /--no-report: .*bombadil-kit report/);
+
+  const built = sweepEnd(loaded, {});
+  assert.ok(existsSync(join(loaded.out, 'report', 'state.json')));
+  assert.match(built[0]!, /^sweep 1: /);
 });
 
 test('projectRoutes: repo-relative paths, projects without routes left out', () => {

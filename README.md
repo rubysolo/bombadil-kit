@@ -98,6 +98,7 @@ npx bombadil-kit run --seed 1234 --ref-date 2026-11-19   # same mock data and fa
 npx bombadil-kit run -- --exit-on-violation  # everything after -- goes to Bombadil
 npx bombadil-kit run --reproduce tmp/bombadil/runs/web/<run>  # replay that run's trace
 npx bombadil-kit run --reuse-server          # a server already on the port, left running
+npx bombadil-kit run --project web --no-report  # leave the runs for one `report` later
 npx bombadil-kit run --width 1280 --height 800 # desktop
 npx bombadil-kit list                          # the flows
 npx bombadil-kit report --fail-on new          # exit 1 if the latest sweep found something new
@@ -350,6 +351,12 @@ message), digits blurred, so repeats land on the same id.
 
 A **sweep** is one report build: every run it hasn't seen yet. `run` builds
 once per invocation, so all its flows are one sweep.
+
+Builds take turns on `state.json.lock` in the report folder, and every file is
+written whole, so `run`s that finish at once don't lose each other's sweeps.
+Each one still makes its own sweep. To make several runs one sweep (projects in
+parallel, CI jobs whose `runs/` you gather into one folder), run them with
+`--no-report`, then `report` once; `--baseline` goes on the `report`.
 
 | status | means |
 |---|---|
