@@ -32,6 +32,21 @@ export const ErrorNote = ({ error, retry }: { error: Parameters<typeof describe>
 
 export const money = (n: number) => `$${n.toFixed(2)}`;
 
+// A modal over everything, the sticky header too: its backdrop hides the logo
+// and its title sits where the logo is. nothingUnder mustn't call that text
+// under the logo.
+export const Details = ({ product, close }: { product: { name: string; price: number }; close: () => void }) => (
+  <div className="backdrop" onClick={close}>
+    <div role="dialog" aria-modal="true" aria-labelledby="details-title" className="dialog" onClick={(e) => e.stopPropagation()}>
+      <h2 id="details-title">{product.name}</h2>
+      <p>{money(product.price)}</p>
+      <button type="button" onClick={close}>
+        Close
+      </button>
+    </div>
+  </div>
+);
+
 export class ErrorBoundary extends Component<{ children: ReactNode }, { failed: boolean }> {
   state = { failed: false };
   static getDerivedStateFromError() {

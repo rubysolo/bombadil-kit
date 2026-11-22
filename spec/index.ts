@@ -32,7 +32,7 @@ import {
 // Import, then export the bindings: `export { … } from` beside an import of the
 // same names makes Bombadil's bundle declare them twice ("Identifier
 // 'faultInFlight' has already been declared").
-import { contentLength, isVisible, visibleOutside } from './dom.ts';
+import { contentLength, OVERLAYS, isVisible, textUnder, visibleOutside } from './dom.ts';
 import {
   consoleErrorExcused,
   faultInFlight,
@@ -57,6 +57,7 @@ import { reachedMilestones, type MilestoneDef, type MilestonePredicate } from '.
 import { inFence } from './fence.ts';
 
 export {
+  OVERLAYS,
   freshApiCalls,
   reachedMilestones,
   type MilestoneDef,
@@ -344,29 +345,20 @@ export const consoleQuietUnlessFaulted = (options: number | ConsoleExcuse = 5000
 };
 
 /**
- * No text outside `container` is drawn over the element `selector` matches
- * (a floating header's logo, a sticky button). Reports the first offender.
+ * No text outside `container` is drawn over, or slides under, the element
+ * `selector` matches (a floating header's logo, a sticky button). Reports the
+ * first offender.
+ *
+ * Text inside `exclude` (default OVERLAYS: dialogs, menus, listboxes,
+ * tooltips; '' for none) doesn't count, and while the target is covered
+ * (by a modal's backdrop, an overlay, a drawer) or off screen nothing does:
+ * only text where the target is still visible is "under" it. Visible means
+ * elementFromPoint hits it at its center or near a corner, so a target with
+ * `pointer-events: none` reads as covered: point `selector` at an element
+ * that takes clicks.
  */
-export const nothingUnder = ({ selector = 'header img', container = 'header' } = {}) => {
-  const over = extract((state) => {
-    const target = state.document.querySelector(selector);
-    if (!target) return null;
-    const box = target.getBoundingClientRect();
-    if (box.width === 0) return null;
-    const walker = state.document.createTreeWalker(state.document.body, NodeFilter.SHOW_TEXT);
-    const range = state.document.createRange();
-    for (let node = walker.nextNode(); node; node = walker.nextNode()) {
-      const text = node.textContent?.trim();
-      if (!text || node.parentElement?.closest(container)) continue;
-      range.selectNodeContents(node);
-      for (const r of range.getClientRects()) {
-        const w = Math.min(r.right, box.right) - Math.max(r.left, box.left);
-        const h = Math.min(r.bottom, box.bottom) - Math.max(r.top, box.top);
-        if (w > 2 && h > 2) return text.slice(0, 60);
-      }
-    }
-    return null;
-  });
+export const nothingUnder = ({ selector = 'header img', container = 'header', exclude = OVERLAYS } = {}) => {
+  const over = extract((state) => textUnder(state.document, selector, container, exclude));
   return always(() => over.current === null);
 };
 

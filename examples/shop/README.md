@@ -39,6 +39,7 @@ npx bombadil-kit run               # a plain sweep; report in tmp/bombadil/repor
 | `silent-write` | a failed add-to-cart shows nothing | `failedWritesShown` |
 | `noisy` | list items without keys: React warns | `consoleQuietUnlessFaulted` |
 | `overlap` | a fixed promo line sits over the logo | `nothingUnder` |
+| `under-header` | the header floats and the page's heading slides under its logo | `nothingUnder` |
 | `blank` | the app never mounts | `appRenders` |
 | `empty` | the cart renders nothing past the header | `noBlankPage` |
 | `throw` | the add-to-cart handler throws | Bombadil's `noUncaughtExceptions` |
