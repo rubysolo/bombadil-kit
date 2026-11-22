@@ -11,15 +11,28 @@ export type ApiSnapshot = {
   inventory?: { key: string; variants: string[] }[];
 };
 
-export type ApiWindow = { __mockCalls?: MockCall[]; __mockEndpoints?: MockEndpoint[]; __fuzzApi?: { seen: number; inventory: boolean } };
+export type ApiWindow = { __mockCalls?: MockCall[]; __mockEndpoints?: MockEndpoint[]; __fuzzApi?: { seen: number; inventory: boolean; seq?: number } };
 
 /** What `win`'s mock layer has logged since the last call, as an ApiSnapshot. Keeps its place on `win`. */
 export const freshApiCalls = (win: ApiWindow): ApiSnapshot => {
   const mark = (win.__fuzzApi ??= { seen: 0, inventory: false });
   const all = win.__mockCalls ?? [];
-  // A mock layer that replaced its array starts over.
-  if (all.length < mark.seen) mark.seen = 0;
-  const calls = all.slice(mark.seen).map(({ key, variant, outcome }) => (variant === undefined ? { key, outcome } : { key, variant, outcome }));
+  const last = all.at(-1)?.seq;
+  let start: number;
+  if (typeof last === 'number') {
+    // seq: the calls after the last one read, wherever they sit, so a log
+    // capped at a fixed length (push, then shift) still loses nothing.
+    // A seq that went back means a new log: start over.
+    if (mark.seq === undefined || last < mark.seq) mark.seq = 0;
+    start = all.length;
+    while (start > 0 && (all[start - 1]!.seq ?? 0) > mark.seq) start--;
+    mark.seq = last;
+  } else {
+    // No seq: the log must only grow. One that replaced its array starts over.
+    if (all.length < mark.seen) mark.seen = 0;
+    start = mark.seen;
+  }
+  const calls = all.slice(start).map(({ key, variant, outcome }) => (variant === undefined ? { key, outcome } : { key, variant, outcome }));
   mark.seen = all.length;
   const out: ApiSnapshot = { calls };
   if (!mark.inventory && win.__mockEndpoints) {

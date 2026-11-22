@@ -96,6 +96,12 @@ export interface MockCall {
   outcome: CallOutcome;
   /** `Date.now()` when the call was made. */
   at: number;
+  /**
+   * Optional. Counts up by at least 1 per call, across the page. With it, a
+   * mock layer may cap its log (drop the oldest); without it, the log must
+   * only grow, or apiCalls misses the calls past the cap.
+   */
+  seq?: number;
 }
 
 /** An endpoint the mock API has, so the report can show the ones never called. */
@@ -194,10 +200,13 @@ export const FAULTS: Fault[] = [
  * Each request goes onto window.__mockCalls as `METHOD /path`, `'error'` if
  * it faulted it, else `'ok'` (spared ones too: the app did call them).
  */
+// Shared by every injector on the page, so their entries' seq never repeats.
+let callSeq = 0;
+
 export const createFaultInjector = ({ rate, seed, spare = [/^\/mock\//], isWrite, delivered }: FaultConfig) => {
   const random = prng(seed);
   const call = (method: string, path: string, outcome: CallOutcome) => {
-    if (typeof window !== 'undefined') (window.__mockCalls ??= []).push({ key: `${method.toUpperCase()} ${path}`, outcome, at: Date.now() });
+    if (typeof window !== 'undefined') (window.__mockCalls ??= []).push({ key: `${method.toUpperCase()} ${path}`, outcome, at: Date.now(), seq: ++callSeq });
   };
   return (method: string, path: string, deliverIn?: number | (() => number)): Fault | undefined => {
     if (spare.some((re) => re.test(path)) || random() >= rate) {
