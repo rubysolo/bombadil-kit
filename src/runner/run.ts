@@ -182,6 +182,39 @@ export const serverChoice = (alreadyUp: boolean, reuse: boolean, origin: string)
 };
 
 /**
+ * Waits for a server we spawned. `ready` once something answers and our
+ * process is still running `settle` ms later: between the free-port check and
+ * our server binding, another one (a second worktree's sweep) can take the
+ * port; ours then exits on --strictPort, and that one answers. `taken` is
+ * that; `exited`, ours died before anything answered; `timeout`, nothing did.
+ */
+export const waitForServer = async ({
+  ready,
+  exited,
+  sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
+  tries = 120,
+  interval = 500,
+  settle = 1000,
+}: {
+  ready: () => Promise<boolean>;
+  exited: () => boolean;
+  sleep?: (ms: number) => Promise<void>;
+  tries?: number;
+  interval?: number;
+  settle?: number;
+}): Promise<'ready' | 'exited' | 'taken' | 'timeout'> => {
+  for (let i = 0; i < tries; i++) {
+    if (exited()) return 'exited';
+    if (await ready()) {
+      await sleep(settle);
+      return exited() ? 'taken' : 'ready';
+    }
+    await sleep(interval);
+  }
+  return 'timeout';
+};
+
+/**
  * `--reproduce <run dir>`: what that run's run.json says to run it with. The
  * spec is named relative to `specs`, the project's specs dir as the repo root
  * sees it (specsDir): a spec outside it is an error, not a fallback to the
@@ -287,11 +320,12 @@ export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
 
   try {
     const ready = `${origin}${p.server.ready ?? '/'}`;
-    for (let i = 0; spawned && i < 120 && !(await up(ready)); i++) {
-      if (exited) throw new Error(`the server exited; see ${logPath}`);
-      await new Promise((r) => setTimeout(r, 500));
-    }
-    if (!(await up(ready))) throw new Error(spawned ? `the server never came up; see ${logPath}` : `nothing answers ${ready}; the server on ${origin} is not the app`);
+    if (spawned) {
+      const state = await waitForServer({ ready: () => up(ready), exited: () => exited });
+      if (state === 'exited') throw new Error(`the server exited; see ${logPath}`);
+      if (state === 'taken') throw new Error(`another server took ${origin} as ours started, and ours exited; pass another --port (see ${logPath})`);
+      if (state === 'timeout') throw new Error(`the server never came up; see ${logPath}`);
+    } else if (!(await up(ready))) throw new Error(`nothing answers ${ready}; the server on ${origin} is not the app`);
 
     let commit = git(root, 'rev-parse', '--short', 'HEAD') || 'unknown';
     if (git(root, 'status', '--porcelain', '--', ...(p.watch ?? [p.dir]))) commit += '-dirty';
