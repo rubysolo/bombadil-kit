@@ -23,6 +23,7 @@ import { parseArgs } from 'node:util';
 import { loadConfig, pickProject, projectRoutes, readFlows, type Loaded, type ProjectConfig } from './config.ts';
 import { projectAffected } from './affected/project.ts';
 import { generate, type FailOn } from './report/generate.ts';
+import { summaryLine } from './report/report.ts';
 import { run } from './runner/run.ts';
 
 // The comment block at the top of this file.
@@ -131,8 +132,7 @@ const cmdReport = (loaded: Loaded, argv: string[]) => {
     baseline: values.baseline && resolve(values.baseline),
     routes: projectRoutes(loaded),
   });
-  const s = report.summary;
-  console.error(`sweep ${report.sweep.id}: ${s.new} new, ${s.open} open, ${s.quiet} quiet, ${s.closed} closed · ${s.routes[0]}/${s.routes[1]} routes`);
+  console.error(summaryLine(report));
   console.error(`→ ${join(resolve(values.out), 'index.html')}`);
   return exitCode;
 };

@@ -84,11 +84,30 @@ export interface ReportProject {
   history: { sweep: number; at: string; findings: number; actions: number }[];
 }
 
+/** Actions and route coverage over some projects, each as of its latest sweep. */
+export interface SummaryScope {
+  projects: string[];
+  actions: number;
+  /** Listed routes reached, of the routes listed (routes.json or `routes`). */
+  routes: [number, number];
+  /** Routes reached that the route list doesn't have: counted apart, never in `routes`. */
+  extra_routes: number;
+}
+
 export interface Report {
   schema: 'bombadil-report/v1';
   generated_at: string;
   sweep: { id: number; at: string; commits: string[] };
-  summary: { new: number; open: number; quiet: number; closed: number; actions: number; routes: [number, number] };
+  summary: {
+    new: number; open: number; quiet: number; closed: number;
+    /** The latest sweep's projects alone: `latest_sweep.actions` and `.routes`. */
+    actions: number;
+    routes: [number, number];
+    /** The projects the latest sweep ran (absent in a report built before it). */
+    latest_sweep?: SummaryScope;
+    /** Every project, as of its own latest sweep: what the header shows (absent in a report built before it). */
+    all?: SummaryScope;
+  };
   projects: ReportProject[];
   findings: ReportFinding[];
 }
@@ -146,6 +165,32 @@ export const flowMilestones = (flows: Record<string, FlowMilestones> | undefined
     }];
   });
   return out.length ? out : undefined;
+};
+
+/** A project's listed routes reached, of those listed, and the reached routes the list lacks. */
+export const routeCoverage = (p: Pick<ReportProject, 'routes'>) => {
+  const known = p.routes.filter((r) => r.known);
+  return { reached: known.filter((r) => r.states > 0).length, known: known.length, extra: p.routes.filter((r) => !r.known && r.states > 0).length };
+};
+
+const scope = (projects: ReportProject[]): SummaryScope => {
+  const cov = projects.map(routeCoverage);
+  return {
+    projects: projects.map((p) => p.name),
+    actions: projects.reduce((n, p) => n + p.actions, 0),
+    routes: [cov.reduce((n, c) => n + c.reached, 0), cov.reduce((n, c) => n + c.known, 0)],
+    extra_routes: cov.reduce((n, c) => n + c.extra, 0),
+  };
+};
+
+/** The one-line summary `run` and `report` print. */
+export const summaryLine = (r: Report): string => {
+  const s = r.summary;
+  const all = s.all;
+  const routes = all ? all.routes : s.routes;
+  return `sweep ${r.sweep.id}: ${s.new} new, ${s.open} open, ${s.quiet} quiet, ${s.closed} closed · ${routes[0]}/${routes[1]} routes` +
+    (all?.extra_routes ? ` (+${all.extra_routes} not in the route list)` : '') +
+    (all && all.projects.length > 1 ? ` across ${all.projects.length} projects` : '');
 };
 
 const ORDER: Record<Status, number> = { new: 0, open: 1, quiet: 2, closed: 3 };
@@ -240,7 +285,8 @@ export const buildReport = (state: State, info: Record<string, ProjectInfo>, opt
   });
 
   const count = (s: Status) => findings.filter((f) => f.status === s).length;
-  const latestProjects = projects.filter((p) => p.last_sweep === latest.id);
+  const latestSweep = scope(projects.filter((p) => p.last_sweep === latest.id));
+  const all = scope(projects);
   return {
     schema: 'bombadil-report/v1',
     generated_at: opts.generatedAt,
@@ -250,11 +296,10 @@ export const buildReport = (state: State, info: Record<string, ProjectInfo>, opt
       open: count('open'),
       quiet: count('quiet'),
       closed: count('closed'),
-      actions: latestProjects.reduce((n, p) => n + p.actions, 0),
-      routes: [
-        latestProjects.reduce((n, p) => n + p.routes.filter((r) => r.states > 0).length, 0),
-        latestProjects.reduce((n, p) => n + p.routes.length, 0),
-      ],
+      actions: latestSweep.actions,
+      routes: latestSweep.routes,
+      latest_sweep: latestSweep,
+      all,
     },
     projects,
     findings,

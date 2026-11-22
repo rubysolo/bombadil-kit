@@ -5,6 +5,7 @@ import { createInterface } from 'node:readline';
 import { fill, projectRoutes, readFlows, specsDir, type Flow, type Loaded, type ProjectConfig } from '../config.ts';
 import type { RunMeta } from '../report/runs.ts';
 import { generate } from '../report/generate.ts';
+import { summaryLine } from '../report/report.ts';
 
 export interface RunOptions {
   project: string;
@@ -52,11 +53,7 @@ export const sweepEnd = (loaded: Loaded, o: Pick<RunOptions, 'baseline' | 'repor
   if (o.report === false) return [`--no-report: runs are in ${join(loaded.out, 'runs')}; \`bombadil-kit report\` folds them in`];
   try {
     const report = sweepReport(loaded, o.baseline);
-    const s = report.summary;
-    return [
-      `sweep ${report.sweep.id}: ${s.new} new, ${s.open} open, ${s.quiet} quiet, ${s.closed} closed · ${s.routes[0]}/${s.routes[1]} routes`,
-      `→ ${join(loaded.out, 'report', 'index.html')}`,
-    ];
+    return [summaryLine(report), `→ ${join(loaded.out, 'report', 'index.html')}`];
   } catch (err) {
     return [`report: ${(err as Error).message}`];
   }

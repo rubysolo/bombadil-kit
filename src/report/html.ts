@@ -59,6 +59,7 @@ a:focus-visible,button:focus-visible{outline:2px solid var(--c);outline-offset:2
 .stats{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:12px}
 .stat{padding:14px 16px;display:flex;flex-direction:column;gap:6px}
 .stat .k{font:600 13px Rajdhani,"Arial Narrow",sans-serif;letter-spacing:.2em;color:var(--dim)}
+.stat small{font-size:11px;color:var(--dim)}
 .stat .v{font:700 40px/1 Rajdhani,"Arial Narrow",sans-serif;color:var(--k);text-shadow:0 0 16px var(--k)}
 .meter{height:3px;background:rgba(0,229,255,.12)}.meter>i{display:block;height:100%;background:var(--k,var(--c));box-shadow:0 0 8px var(--k,var(--c))}
 .scroll{overflow-x:auto}
@@ -160,6 +161,12 @@ const routeLabel = (t) => {
 };
 const targetOf = (t) => [t.kind, t.faults != null ? 'faults ' + Math.round(t.faults * 100) + '%' : '', t.viewport].filter(Boolean).join(' · ');
 const byProject = (name) => R.projects.find((p) => p.name === name);
+// Listed routes reached, of those listed; routes reached that the list lacks are counted apart.
+const routeCov = (p) => {
+  const known = p.routes.filter((r) => r.known);
+  return { reached: known.filter((r) => r.states > 0).length, known: known.length, extra: p.routes.filter((r) => !r.known && r.states > 0).length };
+};
+const unlisted = (n) => (n ? n + ' not in the route list' : '');
 const sweepsOf = (f) => (byProject(f.project)?.history ?? []).slice(-6);
 const squares = (f) => sweepsOf(f).map((h) => '<span class="sq' + (f.sweeps.includes(h.sweep) ? ' on' : '') + '" title="sweep ' + h.sweep + '"></span>').join('');
 
@@ -179,8 +186,13 @@ const caseRow = (f) =>
 function repo() {
   const s = R.summary;
   const props = [...new Set(R.projects.flatMap((p) => p.properties.map((x) => x.name)))];
-  const stat = (k, v, color, pct) =>
-    '<div class="panel tick stat" style="--k:' + color + '"><span class="k">' + k + '</span><span class="v">' + v + '</span><div class="meter"><i style="width:' + pct + '%"></i></div></div>';
+  const stat = (k, v, color, pct, sub) =>
+    '<div class="panel tick stat" style="--k:' + color + '"><span class="k">' + k + '</span><span class="v">' + v + '</span><div class="meter"><i style="width:' + pct + '%"></i></div>' +
+    (sub ? '<small>' + sub + '</small>' : '') + '</div>';
+  // Every project as of its own latest sweep; a report.json from before summary.all has the latest sweep's alone.
+  const all = s.all || { projects: [], actions: s.actions, routes: s.routes, extra_routes: 0 };
+  const latest = s.latest_sweep ? s.latest_sweep.projects : [];
+  const scope = all.projects.length > 1 ? 'all projects' + (latest.length < all.projects.length ? ' · latest sweep: ' + esc(latest.join(', ')) : '') : '';
   const total = Math.max(1, s.new + s.open + s.quiet + s.closed);
   const cell = (p, name) => {
     const x = p.properties.find((q) => q.name === name);
@@ -189,8 +201,9 @@ function repo() {
     return '<td class="cell"><span class="held" title="held">■</span></td>';
   };
   const cov = (p) => {
-    const reached = p.routes.filter((r) => r.states > 0).length;
-    return '<div style="display:flex;align-items:center;gap:10px"><div class="meter" style="flex:1;min-width:90px;height:6px"><i style="width:' + Math.round((100 * reached) / Math.max(1, p.routes.length)) + '%"></i></div><span class="dim">' + reached + '/' + p.routes.length + '</span></div>';
+    const c = routeCov(p);
+    return '<div style="display:flex;align-items:center;gap:10px"><div class="meter" style="flex:1;min-width:90px;height:6px"><i style="width:' + Math.round((100 * c.reached) / Math.max(1, c.known)) + '%"></i></div><span class="dim">' + c.reached + '/' + c.known + '</span>' +
+      (c.extra ? ' <small class="dim" title="' + unlisted(c.extra) + '">+' + c.extra + '</small>' : '') + '</div>';
   };
   const lane = (status, label, hint, list) =>
     '<section class="panel lane" style="--k:' + K[status] + '"><div class="head"><h2>' + label + ' ' + list.length + '</h2><span class="dim" style="font-size:12px">' + hint + '</span></div>' +
@@ -200,8 +213,8 @@ function repo() {
     '<section class="stats">' +
     stat('NEW', s.new, 'var(--m)', (100 * s.new) / total) + stat('OPEN', s.open, 'var(--m)', (100 * s.open) / total) +
     stat('QUIET', s.quiet, 'var(--c)', (100 * s.quiet) / total) + stat('CLOSED', s.closed, 'var(--g)', (100 * s.closed) / total) +
-    stat('ACTIONS', s.actions.toLocaleString('en-US'), 'var(--c)', 100) +
-    stat('ROUTES', s.routes[0] + '/' + s.routes[1], 'var(--g)', (100 * s.routes[0]) / Math.max(1, s.routes[1])) +
+    stat('ACTIONS', all.actions.toLocaleString('en-US'), 'var(--c)', 100, scope) +
+    stat('ROUTES', all.routes[0] + '/' + all.routes[1], 'var(--g)', (100 * all.routes[0]) / Math.max(1, all.routes[1]), all.extra_routes ? '+' + unlisted(all.extra_routes) : '') +
     '</section>' +
     '<section class="panel"><div class="head"><h2>Property matrix</h2><span class="dim" style="font-size:12px"><span class="g">■</span> held · <span class="m">n</span> open cases · – not checked</span></div><div class="scroll"><table>' +
     '<thead><tr><th>PROJECT</th><th>TARGET</th>' + props.map((p) => '<th class="v"><span>' + esc(p) + '</span></th>').join('') + '<th>ROUTES</th></tr></thead><tbody>' +
@@ -262,7 +275,7 @@ function project(name, tab) {
   const openRoutes = new Set(mine.filter(isOpen).map((f) => f.route));
   tab = tab || 'cases';
   const expected = (p.milestones || []).flatMap((m) => m.expected);
-  const tabs = [['cases', 'CASES ' + mine.length], ['coverage', 'COVERAGE ' + p.routes.filter((r) => r.states > 0).length + '/' + p.routes.length]]
+  const tabs = [['cases', 'CASES ' + mine.length], ['coverage', 'COVERAGE ' + routeCov(p).reached + '/' + routeCov(p).known]]
     .concat(p.milestones ? [['milestones', 'MILESTONES ' + expected.filter((e) => e.reached).length + '/' + expected.length]] : [])
     .concat([['sweeps', 'SWEEPS ' + p.history.length]])
     .map(([id, label]) => '<a role="tab" class="' + (tab === id ? 'on' : '') + '" href="#/p/' + enc(name) + '/' + id + '">' + label + '</a>').join('');
@@ -275,8 +288,8 @@ function project(name, tab) {
           '<span>' + squares(f) + '</span></a>').join('') + '</div>'
       : '<div class="empty">No findings. Every property held on every route it reached.</div>';
   } else if (tab === 'coverage') {
-    const reached = p.routes.filter((r) => r.states > 0).length;
-    body = '<div class="head"><h2>Routes</h2><span class="dim" style="font-size:12px">' + reached + '/' + p.routes.length + ' routes reached</span></div>' +
+    const c = routeCov(p);
+    body = '<div class="head"><h2>Routes</h2><span class="dim" style="font-size:12px">' + c.reached + '/' + c.known + ' routes reached' + (c.extra ? ' · +' + unlisted(c.extra) : '') + '</span></div>' +
       '<div class="routes">' + p.routes.map((r) =>
       '<div class="route' + (openRoutes.has(r.template) ? ' bad' : r.states === 0 ? ' none' : '') + '"><b title="' + esc(r.template) + '">' + routeLabel(r.template) + '</b><small>' +
       (r.states ? r.states.toLocaleString('en-US') + ' states' : 'never reached') + (r.known ? '' : ' · not in the route list') + '</small></div>').join('') + '</div>' +
