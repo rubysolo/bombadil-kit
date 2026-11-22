@@ -6,6 +6,7 @@
   "silent-write": { "property": "failedWritesAreShown", "flow": "buy", "faults": 0.5 },
   "noisy": { "property": "noConsoleErrorsUnlessFaulted", "flow": "explore" },
   "overlap": { "property": "noTextOverLogo", "flow": "explore" },
+  "under-header": { "property": "noTextOverLogo", "flow": "explore" },
   "blank": { "property": "appRenders", "flow": "explore" },
   "empty": { "property": "noBlankPages", "flow": "explore" },
   "throw": { "property": "noUncaughtExceptions", "flow": "buy" },

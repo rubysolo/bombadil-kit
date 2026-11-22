@@ -13,7 +13,7 @@ const LOGO =
   "data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='32' height='32'%3E%3Ccircle cx='16' cy='16' r='14' fill='%23c0392b'/%3E%3C/svg%3E";
 
 export const App = () => (
-  <>
+  <div className={planted('under-header') ? 'floating' : undefined}>
     <header>
       <Link to="/">
         <img src={LOGO} alt="Shop" width={32} height={32} />
@@ -37,5 +37,5 @@ export const App = () => (
         </Routes>
       </ErrorBoundary>
     </main>
-  </>
+  </div>
 );
