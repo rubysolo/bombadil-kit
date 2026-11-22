@@ -27,6 +27,8 @@ export interface RunOptions {
   reproduce?: string;
   /** Use a server already on the port instead of failing; `server.reuse`. */
   reuseServer?: boolean;
+  /** false (`--no-report`): leave the runs for one `bombadil-kit report` later, as parallel sweeps do. */
+  report?: boolean;
   /** The trace to replay, absolute; set by --reproduce, off the CLI's surface. */
   replay?: string;
   /** The run directory being replayed, repo-relative: run.json's `replay_of`. */
@@ -44,6 +46,21 @@ export const sweepReport = (loaded: Loaded, baseline?: string, now = new Date().
     baseline,
     routes: projectRoutes(loaded),
   }).report;
+
+/** After a sweep's runs: rebuild the report, or with `--no-report` say how to. The lines for stderr. */
+export const sweepEnd = (loaded: Loaded, o: Pick<RunOptions, 'baseline' | 'report'>): string[] => {
+  if (o.report === false) return [`--no-report: runs are in ${join(loaded.out, 'runs')}; \`bombadil-kit report\` folds them in`];
+  try {
+    const report = sweepReport(loaded, o.baseline);
+    const s = report.summary;
+    return [
+      `sweep ${report.sweep.id}: ${s.new} new, ${s.open} open, ${s.quiet} quiet, ${s.closed} closed · ${s.routes[0]}/${s.routes[1]} routes`,
+      `→ ${join(loaded.out, 'report', 'index.html')}`,
+    ];
+  } catch (err) {
+    return [`report: ${(err as Error).message}`];
+  }
+};
 
 const stamp = (d = new Date()) => {
   const p = (n: number) => String(n).padStart(2, '0');
@@ -400,14 +417,7 @@ export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
     stop();
 
     // One report rebuild for all the flows: they are one sweep.
-    try {
-      const report = sweepReport(loaded, o.baseline);
-      const s = report.summary;
-      console.error(`sweep ${report.sweep.id}: ${s.new} new, ${s.open} open, ${s.quiet} quiet, ${s.closed} closed · ${s.routes[0]}/${s.routes[1]} routes`);
-      console.error(`→ ${join(out, 'report', 'index.html')}`);
-    } catch (err) {
-      console.error(`report: ${(err as Error).message}`);
-    }
+    for (const line of sweepEnd(loaded, o)) console.error(line);
     return status;
   } finally {
     stop();
