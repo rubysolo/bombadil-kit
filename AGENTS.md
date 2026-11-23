@@ -34,7 +34,9 @@ Installed as a dependency, this file and the prompts are at
 - **Findings aren't failures of the integration.** The first sweeps find real
   bugs. List them for the person; don't fix app bugs as part of the
   integration unless asked.
-- Exit codes: `run` gives 0 clean, 2 property violation, 1 anything else.
+- Exit codes: `run` gives 0 clean, 2 property violation, 1 anything else (a
+  server that never came up, a missing spec, a bad option: never 2). The
+  sweep (`src/runner/run.ts`) owns that mapping; the CLI passes it through.
 - In anything Bombadil bundles (`spec/`, an app's `bombadil/*.ts`), don't
   both import a name and `export { name } from` the same module: the bundle
   declares it twice and the spec won't load ("Identifier 'name' has already
@@ -45,8 +47,8 @@ Installed as a dependency, this file and the prompts are at
 ```text
 spec/index.ts      bombadil-kit/spec: properties + actions (TypeScript; Bombadil bundles it)
 src/app/           bombadil-kit/faults, /rtk, /faker, /console: imported by the app in fuzz mode
-src/runner/        bombadil-kit run
-src/report/        the report generator
+src/runner/        bombadil-kit run: the sweep (run.ts) behind a process seam (processes.ts)
+src/report/        the report generator; record.ts owns run.json
 src/affected/      diff → flows
 src/cli.ts         the bombadil-kit command
 templates/         bombadil-kit.json, bombadil/ (specs, flows, routes), github/fuzz.yml

@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fill, findConfig, loadConfig, pickProject, projectRoutes, readFlows } from '../src/config.ts';
-import { bombadilArgs, serverChoice, waitForServer, sweepEnd, sweepReport, sweepSettings } from '../src/runner/run.ts';
+import { bombadilArgs, sweepEnd, sweepReport, sweepSettings } from '../src/runner/run.ts';
 import { ownArgs, tail as cliTail } from '../src/cli.ts';
 import { selectFlows } from '../src/runner/run.ts';
 import { row, tmp, writeRun } from './helpers.ts';
@@ -130,34 +130,6 @@ test('bombadilArgs: a replay gets no time limit, and the same fence and spec', (
   assert.ok(i > 0 && args[i + 1] === '/repo/tmp/r/trace.jsonl');
   assert.ok(args.includes('--allow-url'), 'the fence still applies');
   assert.deepEqual(args.slice(-2), ['http://127.0.0.1:5199/login', base.specFile]);
-});
-
-test('serverChoice: a free port is spawned on; one in use is an error unless reuse was asked for', () => {
-  assert.equal(serverChoice(false, false, 'http://127.0.0.1:5199'), 'spawn');
-  assert.equal(serverChoice(true, true, 'http://127.0.0.1:5199'), 'reuse');
-  assert.throws(() => serverChoice(true, false, 'http://127.0.0.1:5199'), /already serving http:\/\/127\.0\.0\.1:5199.*--reuse-server/);
-});
-
-// A fake clock: each sleep advances it, so the server's answers and exits follow time, not wall time.
-const fakeServer = ({ answersAt = Infinity, exitsAt = Infinity }: { answersAt?: number; exitsAt?: number }) => {
-  let now = 0;
-  return {
-    ready: async () => now >= answersAt,
-    exited: () => now >= exitsAt,
-    sleep: async (ms: number) => void (now += ms),
-  };
-};
-
-test('waitForServer: ready once something answers and the spawned server is still running after `settle`', async () => {
-  assert.equal(await waitForServer({ ...fakeServer({ answersAt: 1500 }), interval: 500, settle: 1000 }), 'ready');
-  assert.equal(await waitForServer({ ...fakeServer({ exitsAt: 1000 }), interval: 500 }), 'exited');
-  assert.equal(await waitForServer({ ...fakeServer({}), tries: 4, interval: 500 }), 'timeout');
-});
-
-test('waitForServer: another server took the port after the check: it answers, ours exits, and that is not ready', async () => {
-  // Something answers at once (another worktree's dev server), and the one we
-  // spawned dies on --strictPort 300ms later: sweeping would test the wrong app.
-  assert.equal(await waitForServer({ ...fakeServer({ answersAt: 0, exitsAt: 300 }), interval: 500, settle: 1000 }), 'taken');
 });
 
 test('the CLI takes everything after -- for Bombadil, the separator aside', () => {

@@ -105,7 +105,11 @@ npx bombadil-kit report --fail-on new          # exit 1 if the latest sweep foun
 npx bombadil browser inspect tmp/bombadil/runs/web/<run>   # step through one run
 ```
 
-`run` exits 0 clean, 2 on a property violation, 1 otherwise.
+`run` exits 0 clean, 2 on a property violation, 1 otherwise: a bad option, a
+missing spec, a server that never came up, Bombadil failing. Only a violation
+is 2, so CI can carry on past it to the report and fail on anything else. The
+other commands exit 1 on an error; an unknown command prints the usage and
+exits 2.
 
 A finding's `repro.command` reruns the flow; `--reproduce <run dir>` replays it.
 It reads that run's `run.json`, starts the server with its seed, faults, latency,
