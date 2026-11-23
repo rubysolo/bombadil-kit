@@ -1,11 +1,10 @@
-import { spawn, execFileSync } from 'node:child_process';
-import { closeSync, existsSync, mkdirSync, openSync, readFileSync, statSync, writeFileSync } from 'node:fs';
-import { isAbsolute, join, relative, resolve } from 'node:path';
-import { createInterface } from 'node:readline';
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs';
+import { join, relative, resolve } from 'node:path';
 import { fill, projectRoutes, readFlows, specsDir, type Flow, type Loaded, type ProjectConfig } from '../config.ts';
-import type { RunMeta } from '../report/runs.ts';
+import { buildRun, readRunRecord, replayProject, replaySettings, writeRunRecord, type RunRecord } from '../report/record.ts';
 import { generate } from '../report/generate.ts';
 import { summaryLine } from '../report/report.ts';
+import { realProcesses, type Processes, type Server } from './processes.ts';
 
 export interface RunOptions {
   project: string;
@@ -62,23 +61,6 @@ export const sweepEnd = (loaded: Loaded, o: Pick<RunOptions, 'baseline' | 'repor
 const stamp = (d = new Date()) => {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-};
-
-const up = async (url: string) => {
-  try {
-    await fetch(url, { signal: AbortSignal.timeout(2000) });
-    return true;
-  } catch {
-    return false;
-  }
-};
-
-const git = (root: string, ...args: string[]) => {
-  try {
-    return execFileSync('git', ['-C', root, ...args], { encoding: 'utf8', stdio: ['ignore', 'pipe', 'ignore'] }).trim();
-  } catch {
-    return '';
-  }
 };
 
 const bombadilBin = (root: string) => {
@@ -158,43 +140,6 @@ export const sweepSettings = (p: Pick<ProjectConfig, 'target' | 'defaults'>, o: 
   return { time: o.time ?? p.defaults?.time ?? '1m', faults, latency: o.latency ?? p.defaults?.latency ?? 50 };
 };
 
-interface SweepRecord {
-  flow: string;
-  faults: number;
-  latency: number;
-  seed: number;
-  refDate: string;
-  time: string;
-  width: number;
-  height: number;
-}
-
-/** run.json's `target`: what the run ran against. A live run records only what the runner controls. */
-export const runTarget = (kind: Target, r: SweepRecord): Record<string, unknown> =>
-  kind === 'live'
-    ? { kind, flow: r.flow, viewport: `${r.width}x${r.height}` }
-    : { kind, flow: r.flow, faults: r.faults, latency_ms: r.latency, viewport: `${r.width}x${r.height}`, mock_ref_date: r.refDate };
-
-/** The command that runs this flow again: with a mock, the same seed, faults and data; live, only the same flow and viewport. */
-export const rerunCommand = (kind: Target, r: SweepRecord, project: string[] = [], extra: string[] = []) =>
-  [
-    'npx bombadil-kit run', ...project, '--flow', r.flow,
-    ...(kind === 'live' ? [] : ['--seed', r.seed, '--faults', r.faults, '--ref-date', r.refDate]),
-    '--time', r.time, '--width', r.width, '--height', r.height,
-    ...(extra.length ? ['--', ...extra] : []),
-  ].join(' ');
-
-/**
- * Whether to start the project's server. Something already on the port is an
- * error unless the caller asked to reuse it; reusing means server.command and
- * server.env never ran, so no placeholders were applied.
- */
-export const serverChoice = (alreadyUp: boolean, reuse: boolean, origin: string): 'spawn' | 'reuse' => {
-  if (!alreadyUp) return 'spawn';
-  if (!reuse) throw new Error(`something is already serving ${origin}; stop it or pass --port or --reuse-server`);
-  return 'reuse';
-};
-
 /**
  * Waits for a server we spawned. `ready` once something answers and our
  * process is still running `settle` ms later: between the free-port check and
@@ -202,85 +147,54 @@ export const serverChoice = (alreadyUp: boolean, reuse: boolean, origin: string)
  * port; ours then exits on --strictPort, and that one answers. `taken` is
  * that; `exited`, ours died before anything answered; `timeout`, nothing did.
  */
-export const waitForServer = async ({
-  ready,
-  exited,
-  sleep = (ms: number) => new Promise<void>((r) => setTimeout(r, ms)),
-  tries = 120,
-  interval = 500,
-  settle = 1000,
-}: {
-  ready: () => Promise<boolean>;
-  exited: () => boolean;
-  sleep?: (ms: number) => Promise<void>;
-  tries?: number;
-  interval?: number;
-  settle?: number;
-}): Promise<'ready' | 'exited' | 'taken' | 'timeout'> => {
+const waitForServer = async (procs: Processes, server: Server, url: string, tries = 120, interval = 500, settle = 1000) => {
   for (let i = 0; i < tries; i++) {
-    if (exited()) return 'exited';
-    if (await ready()) {
-      await sleep(settle);
-      return exited() ? 'taken' : 'ready';
+    if (server.exited()) return 'exited';
+    if (await procs.answers(url)) {
+      await procs.sleep(settle);
+      return server.exited() ? 'taken' : 'ready';
     }
-    await sleep(interval);
+    await procs.sleep(interval);
   }
   return 'timeout';
 };
 
-/**
- * `--reproduce <run dir>`: what that run's run.json says to run it with. The
- * spec is named relative to `specs`, the project's specs dir as the repo root
- * sees it (specsDir): a spec outside it is an error, not a fallback to the
- * flow's. Given `dir`, the replay records it as the run it replays.
- */
-export const reproOptions = (meta: RunMeta, specs: string, dir?: string): { options: Partial<RunOptions>; project: string } => {
-  const target = (meta.target ?? {}) as { kind?: Target; faults?: number; latency_ms?: number; mock_ref_date?: string; viewport?: string };
-  const [width, height] = (target.viewport ?? '').split('x').map(Number);
-  const live = target.kind === 'live';
-  const rel = relative(specs, String(meta.spec ?? ''));
-  if (!meta.spec || rel.startsWith('..') || isAbsolute(rel) || !rel.endsWith('.ts')) {
-    throw new Error(`the run's spec ${meta.spec} is not under ${specs}, the project's specs dir`);
-  }
-  return {
-    project: String(meta.project ?? ''),
-    options: {
-      flows: meta.flow ? [meta.flow] : [],
-      spec: rel.slice(0, -'.ts'.length),
-      seed: meta.seed,
-      time: meta.time_limit,
-      width: Number.isFinite(width) ? width : undefined,
-      height: Number.isFinite(height) ? height : undefined,
-      ...(live ? {} : { faults: target.faults, latency: target.latency_ms, refDate: target.mock_ref_date }),
-      ...(dir ? { replayOf: dir } : {}),
-    },
-  };
-};
+/** What one sweep produced. */
+export interface SweepResult {
+  /**
+   * The exit status, which nothing remaps: 2 if any flow found a property
+   * violation, 1 if a flow's Bombadil failed otherwise or the sweep itself
+   * did (a bad option, no spec, a server that never came up), 0 clean.
+   */
+  status: 0 | 1 | 2;
+  /** Each run the sweep recorded, in flow order: its directory and its run.json. */
+  runs: { dir: string; record: RunRecord }[];
+}
 
-/** The project a replay runs in: the one its run.json names. A `--project` beside it must agree. */
-export const replayProject = (recorded: string, given?: string): string => {
-  if (given && given !== recorded) throw new Error(`that run is project ${recorded}, not ${given}`);
-  return recorded;
-};
-
-/**
- * The command that replays one run's trace: `repro.replay`, beside
- * `repro.command`. Only the run directory: a replay takes its seed, faults,
- * viewport and the rest from that run's run.json, whatever else is passed.
- */
-export const replayCommand = (dir: string, project: string[] = []) => ['npx bombadil-kit run', ...project, '--reproduce', dir].join(' ');
+/** A flow's Bombadil exit code folded into the sweep's status: a violation outranks a failure. */
+const fold = (status: SweepResult['status'], rc: number): SweepResult['status'] => (rc === 0 ? status : rc === 2 ? 2 : status === 0 ? 1 : status);
 
 /**
  * One sweep: starts the dev server once, runs Bombadil once per flow, writes
- * each run's run.json, stops the server, rebuilds the report once.
- * Exit status: 2 if any flow found a property violation, 1 if a run failed
- * otherwise, 0 clean.
+ * each run's run.json, stops the server, rebuilds the report once. With
+ * `reproduce`, replays that run instead. Never throws: whatever goes wrong is
+ * said on stderr and is status 1. Child processes go through `procs`.
  */
-export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
-  // reproduce() clears `reproduce` before delegating back, so this dispatches once.
-  if (o.reproduce) return reproduce(loaded, o);
+export const run = async (loaded: Loaded, o: RunOptions, procs: Processes = realProcesses): Promise<SweepResult> => {
+  const runs: SweepResult['runs'] = [];
+  try {
+    const status = await sweep(loaded, o.reproduce ? replay(loaded, o) : o, procs, runs);
+    return { status, runs };
+  } catch (err) {
+    console.error(`bombadil-kit run: ${(err as Error).message}`);
+    return { status: 1, runs };
+  }
+};
+
+const sweep = async (loaded: Loaded, o: RunOptions, procs: Processes, runs: SweepResult['runs']): Promise<SweepResult['status']> => {
   const { root, config, out } = loaded;
-  const p: ProjectConfig = config.projects[o.project]!;
+  const p: ProjectConfig | undefined = config.projects[o.project];
+  if (!p) throw new Error(`no project ${o.project} in bombadil-kit.json`);
   const flows = selectFlows(readFlows(root, p), o.flows);
   const kind: Target = p.target ?? 'mock';
   const { time, faults, latency } = sweepSettings(p, o);
@@ -292,65 +206,57 @@ export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
   const origin = `http://127.0.0.1:${port}`;
   const bombadil = bombadilBin(root);
   const quiet = (p.quiet ?? []).map((q) => new RegExp(q));
+  // Every flow's spec, before anything starts: a missing one is a mistake, not a run.
+  const planned = flows.map((flow) => {
+    const specFile = join(specsDir(root, p), `${o.spec ?? flow.spec ?? p.spec ?? 'spec'}.ts`);
+    if (!existsSync(specFile)) throw new Error(`no spec at ${specFile}`);
+    return { flow, specFile };
+  });
 
   const reuse = o.reuseServer ?? p.server.reuse ?? false;
-  const choice = serverChoice(await up(`${origin}/`), reuse, origin);
-  const spawned = choice === 'spawn';
+  // Something already on the port is an error unless reuse was asked for;
+  // reusing means server.command and server.env never run.
+  const busy = await procs.answers(`${origin}/`);
+  if (busy && !reuse) throw new Error(`something is already serving ${origin}; stop it or pass --port or --reuse-server`);
+  const spawned = !busy;
 
-  const runs = join(out, 'runs', o.project);
-  mkdirSync(runs, { recursive: true });
+  const runsDir = join(out, 'runs', o.project);
+  mkdirSync(runsDir, { recursive: true });
   const at = stamp();
-  const logPath = join(runs, `${at}-s${seed}.server.log`);
+  const logPath = join(runsDir, `${at}-s${seed}.server.log`);
   const values = { port, seed, faults, latency, refDate };
-  const [cmd, ...cmdArgs] = p.server.command.map((part) => fill(part, values));
-  const env = { ...process.env, ...Object.fromEntries(Object.entries(p.server.env ?? {}).map(([k, v]) => [k, fill(v, values)])) };
-  let server: ReturnType<typeof spawn>;
-  let exited = false;
+  let server: Server | undefined;
   if (spawned) {
-    const logFd = openSync(logPath, 'a');
-    // Its own process group, so stopping it stops its children and nothing else.
-    server = spawn(cmd!, cmdArgs, { cwd: join(root, p.dir), env, stdio: ['ignore', logFd, logFd], detached: true });
-    closeSync(logFd);
-    server.on('exit', () => (exited = true));
+    const [command, ...args] = p.server.command.map((part) => fill(part, values));
+    const env = { ...process.env, ...Object.fromEntries(Object.entries(p.server.env ?? {}).map(([k, v]) => [k, fill(v, values)])) };
+    server = procs.startServer({ command: command!, args, cwd: join(root, p.dir), env, log: logPath });
   } else {
     // Someone else's server: the log stays empty, and stopping is not ours to do.
     writeFileSync(logPath, '');
     console.error(`reusing the server on ${origin}: server.command and server.env never ran, so {seed}, {faults}, {latency} and {refDate} were not applied to it`);
   }
-  const stop = () => {
-    if (spawned && !exited && server?.pid) {
-      try {
-        process.kill(-server.pid, 'SIGTERM');
-      } catch {
-        /* already gone */
-      }
-    }
-  };
-  const onSignal = () => {
-    stop();
-    process.exit(130);
-  };
-  process.on('SIGINT', onSignal).on('SIGTERM', onSignal);
+  const untrap = procs.onInterrupt(() => server?.stop());
 
   try {
     const ready = `${origin}${p.server.ready ?? '/'}`;
-    if (spawned) {
-      const state = await waitForServer({ ready: () => up(ready), exited: () => exited });
+    if (server) {
+      const state = await waitForServer(procs, server, ready);
       if (state === 'exited') throw new Error(`the server exited; see ${logPath}`);
       if (state === 'taken') throw new Error(`another server took ${origin} as ours started, and ours exited; pass another --port (see ${logPath})`);
       if (state === 'timeout') throw new Error(`the server never came up; see ${logPath}`);
-    } else if (!(await up(ready))) throw new Error(`nothing answers ${ready}; the server on ${origin} is not the app`);
+    } else if (!(await procs.answers(ready))) throw new Error(`nothing answers ${ready}; the server on ${origin} is not the app`);
 
-    let commit = git(root, 'rev-parse', '--short', 'HEAD') || 'unknown';
-    if (git(root, 'status', '--porcelain', '--', ...(p.watch ?? [p.dir]))) commit += '-dirty';
-    const version = execFileSync(bombadil, ['--version'], { encoding: 'utf8' }).trim().split(/\s+/).pop() ?? '';
+    let commit = procs.git(root, ['rev-parse', '--short', 'HEAD']) || 'unknown';
+    if (procs.git(root, ['status', '--porcelain', '--', ...(p.watch ?? [p.dir])])) commit += '-dirty';
+    const facts = {
+      project: o.project, named: Object.keys(config.projects).length > 1, kind,
+      seed, faults, latency, refDate, time, width, height, commit, bombadil: procs.bombadilVersion(bombadil),
+      bombadilArgs: o.bombadilArgs, replayOf: o.replayOf,
+    };
 
-    let status = 0;
-    for (const flow of flows) {
-      const spec = o.spec ?? flow.spec ?? p.spec ?? 'spec';
-      const specFile = join(specsDir(root, p), `${spec}.ts`);
-      if (!existsSync(specFile)) throw new Error(`no spec at ${specFile}`);
-      const outDir = join(runs, `${at}-s${seed}-${flow.name}`);
+    let status: SweepResult['status'] = 0;
+    for (const { flow, specFile } of planned) {
+      const outDir = join(runsDir, `${at}-s${seed}-${flow.name}`);
       mkdirSync(outDir, { recursive: true });
       const args = bombadilArgs({
         origin, flow, specFile, outDir, time, width, height,
@@ -363,85 +269,53 @@ export const run = async (loaded: Loaded, o: RunOptions): Promise<number> => {
 
       const start = fill(flow.start, values);
       console.error(`→ ${flow.name}: ${origin}${start}${o.replay ? ' (replay)' : ` for ${time}`} (${kind === 'live' ? 'live backend' : `faults ${faults}, seed ${seed}`})`);
+      // The server log is the sweep's; each run keeps the part written while it ran.
       const mark = statSync(logPath).size;
       const startedAt = new Date().toISOString().replace(/\.\d+Z$/, 'Z');
-      const child = spawn(bombadil, args, { cwd: root, stdio: ['ignore', 'inherit', 'pipe'] });
-      createInterface({ input: child.stderr! }).on('line', (line) => {
-        if (!quiet.some((q) => q.test(line))) process.stderr.write(`${line}\n`);
+      const rc = await procs.bombadil({
+        bin: bombadil, args, cwd: root,
+        line: (line) => void (quiet.some((q) => q.test(line)) || process.stderr.write(`${line}\n`)),
       });
-      const rc: number = await new Promise((r) => child.on('close', (code) => r(code ?? 1)));
       writeFileSync(join(outDir, 'app.log'), readFileSync(logPath).subarray(mark));
       if (rc === 0) console.error('  ✓ no violations');
-      else if (rc === 2) {
-        console.error(`  ✗ property violation: npx bombadil browser inspect ${outDir}`);
-        status = 2;
-      } else {
-        console.error(`  ✗ bombadil exited ${rc}`);
-        if (status === 0) status = 1;
-      }
+      else if (rc === 2) console.error(`  ✗ property violation: npx bombadil browser inspect ${outDir}`);
+      else console.error(`  ✗ bombadil exited ${rc}`);
+      status = fold(status, rc);
 
-      // What the report reads about this run (src/report/runs.ts RunMeta).
-      const record = { flow: flow.name, faults, latency, seed, refDate, time, width, height };
-      const projectName = Object.keys(config.projects).length > 1 ? ['--project', o.project] : [];
-      const again = rerunCommand(kind, record, projectName, o.bombadilArgs ?? []);
-      writeFileSync(
-        join(outDir, 'run.json'),
-        `${JSON.stringify(
-          {
-            schema: 'bombadil-run/v1',
-            project: o.project,
-            spec: relative(root, specFile),
-            flow: flow.name,
-            seed,
-            start,
-            started_at: startedAt,
-            commit,
-            target: runTarget(kind, record),
-            bombadil: version,
-            exit_code: rc,
-            time_limit: time,
-            command: again,
-            ...(flow.milestones?.length ? { expected_milestones: flow.milestones } : {}),
-            ...(o.bombadilArgs?.length ? { bombadil_args: o.bombadilArgs } : {}),
-            replay: replayCommand(relative(root, outDir), projectName),
-            ...(o.replayOf ? { replay_of: o.replayOf } : {}),
-          },
-          null,
-          2,
-        )}\n`,
-      );
+      const record = buildRun(facts, {
+        flow: flow.name, milestones: flow.milestones, spec: relative(root, specFile), dir: relative(root, outDir), start, startedAt, exitCode: rc,
+      });
+      writeRunRecord(outDir, record);
+      runs.push({ dir: outDir, record });
     }
-    stop();
+    server?.stop();
 
     // One report rebuild for all the flows: they are one sweep.
     for (const line of sweepEnd(loaded, o)) console.error(line);
     return status;
   } finally {
-    stop();
-    process.off('SIGINT', onSignal).off('SIGTERM', onSignal);
+    server?.stop();
+    untrap();
   }
 };
 
 /**
- * `--reproduce <run dir>`: restart the server with the recorded run's seed,
- * faults, latency, reference date and viewport, and replay its trace with
- * Bombadil on the same flow and spec. Everything else comes from the run's
- * project as it is configured now.
+ * `--reproduce <run dir>`: the options that restart the server with the
+ * recorded run's seed, faults, latency, reference date and viewport, and
+ * replay its trace with Bombadil on the same flow and spec. Everything else
+ * comes from the run's project as it is configured now.
  */
-const reproduce = async (loaded: Loaded, o: RunOptions): Promise<number> => {
+const replay = (loaded: Loaded, o: RunOptions): RunOptions => {
   const dir = resolve(loaded.root, o.reproduce!);
-  if (!existsSync(join(dir, 'run.json'))) throw new Error(`no run.json in ${dir}`);
-  const meta = JSON.parse(readFileSync(join(dir, 'run.json'), 'utf8')) as RunMeta;
+  const meta = readRunRecord(dir);
   const trace = join(dir, 'trace.jsonl');
   if (!existsSync(trace)) throw new Error(`${dir} has no trace.jsonl to replay`);
-  const project = replayProject(String(meta.project ?? ''), o.project || undefined);
+  const project = replayProject(meta, o.project || undefined);
   const p = loaded.config.projects[project];
   if (!p) throw new Error(`run ${dir} is project ${project}, which bombadil-kit.json has no entry for`);
-  const { options } = reproOptions(meta, relative(loaded.root, specsDir(loaded.root, p)), relative(loaded.root, dir));
+  const options = replaySettings(meta, relative(loaded.root, specsDir(loaded.root, p)), relative(loaded.root, dir));
   console.error(`→ replaying ${dir} (${project}, seed ${meta.seed})`);
   // Bombadil replays the trace itself, so nothing from the original run's `--`
   // carries over: --exit-on-violation would stop a replay before its end.
-  // `replay` is the path through the sweep; `reproduce: undefined` is what
-  // stops the second dispatch coming back here.
-  return run(loaded, { ...o, ...options, project, replay: trace, reproduce: undefined, bombadilArgs: [] });
+  return { ...o, ...options, project, replay: trace, reproduce: undefined, bombadilArgs: [] };
 };

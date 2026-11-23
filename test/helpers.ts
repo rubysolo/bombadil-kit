@@ -1,6 +1,7 @@
 import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
+import { buildRun, writeRunRecord } from '../src/report/record.ts';
 
 // Bombadil timestamps are microseconds since the epoch.
 export const T0 = Date.UTC(2026, 10, 19, 19, 26, 0) * 1000;
@@ -83,7 +84,7 @@ export interface RunSpec {
   expected?: string[];
 }
 
-/** Writes a run directory (run.json, trace.jsonl, empty screenshots) and returns its path. */
+/** Writes a run directory (run.json as the runner builds it, trace.jsonl, empty screenshots) and returns its path. */
 export const writeRun = (root: string, run: RunSpec): string => {
   const project = run.project ?? 'web';
   const dir = join(root, project, run.id);
@@ -93,22 +94,18 @@ export const writeRun = (root: string, run: RunSpec): string => {
     const name = r.state.screenshot?.split('/').pop();
     if (name) writeFileSync(join(dir, 'screenshots', name), 'jpeg');
   }
-  writeFileSync(
-    join(dir, 'run.json'),
-    JSON.stringify({
-      schema: 'bombadil-run/v1',
-      project,
-      flow: run.flow,
-      spec: run.spec ?? 'apps/web/bombadil/spec.ts',
-      target: { kind: 'mock', faults: 0.1, viewport: '390x844' },
-      seed: run.seed ?? 1,
-      start: '/login',
-      started_at: run.startedAt ?? '2026-11-19T19:26:00Z',
-      commit: 'abc1234',
-      bombadil: '0.7.10',
-      exit_code: 2,
-      ...(run.expected ? { expected_milestones: run.expected } : {}),
-    }),
+  writeRunRecord(
+    dir,
+    buildRun(
+      {
+        project, named: false, kind: 'mock', seed: run.seed ?? 1, faults: 0.1, latency: 50, refDate: '2026-11-19',
+        time: '1m', width: 390, height: 844, commit: 'abc1234', bombadil: '0.7.10',
+      },
+      {
+        flow: run.flow ?? 'explore', milestones: run.expected, spec: run.spec ?? 'apps/web/bombadil/spec.ts',
+        dir: `tmp/bombadil/runs/${project}/${run.id}`, start: '/login', startedAt: run.startedAt ?? '2026-11-19T19:26:00Z', exitCode: 2,
+      },
+    ),
   );
   return dir;
 };

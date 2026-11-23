@@ -125,6 +125,7 @@ jobs:
           baseline=()
           [ -f tmp/baseline/state.json ] && baseline=(--baseline tmp/baseline/state.json)
           # 2 = a property violation; whether that's new is the gate's call.
+          # Anything else (1: no server, no spec, Bombadil failing) fails here.
           # shellcheck disable=SC2086 # args is a list of flags
           npx bombadil-kit run --no-sandbox --time "${{ steps.plan.outputs.time }}" \
             --seed "${{ steps.plan.outputs.seed }}" ${{ steps.plan.outputs.args }} \

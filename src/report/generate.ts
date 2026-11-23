@@ -4,13 +4,14 @@ import { renderHtml } from './html.ts';
 import { projectInfo, type ProjectInfo } from './project.ts';
 import { withLock, writeAtomic } from './lock.ts';
 import { buildReport, type Report } from './report.ts';
-import { listRuns, readRun, type RunMeta, type RunResult } from './runs.ts';
+import { readRunRecord } from './record.ts';
+import { listRuns, readRun, type RunResult } from './runs.ts';
 import { applySweep, emptyState, type FindingRecord, type State } from './state.ts';
 
 export type FailOn = 'none' | 'new' | 'open';
 
 export interface GenerateOptions {
-  /** Where scripts/bombadil.sh puts runs: `<runsRoot>/<project>/<run>/`. */
+  /** Where `bombadil-kit run` puts runs: `<runsRoot>/<project>/<run>/`. */
   runsRoot: string;
   /** The report folder: index.html, report.json, findings.ndjson, state.json, evidence/. */
   out: string;
@@ -53,9 +54,9 @@ const build = (opts: GenerateOptions): { report: Report; exitCode: number } => {
 
   const fresh: RunResult[] = [];
   for (const dir of listRuns(opts.runsRoot)) {
-    const meta = JSON.parse(readFileSync(join(dir, 'run.json'), 'utf8')) as RunMeta;
+    const meta = readRunRecord(dir);
     if (`${meta.project}/${basename(dir)}` in state.runs) continue;
-    fresh.push(readRun(dir, infoFor(meta.project, meta.spec).routes));
+    fresh.push(readRun(dir, infoFor(meta.project, meta.spec).routes, meta));
   }
   state = applySweep(state, fresh, opts.now);
   if (state.sweeps.length === 0) throw new Error(`no runs under ${opts.runsRoot}: run the fuzzer first`);

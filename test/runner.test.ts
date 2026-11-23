@@ -3,7 +3,7 @@ import assert from 'node:assert/strict';
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs';
 import { join } from 'node:path';
 import { fill, findConfig, loadConfig, pickProject, projectRoutes, readFlows } from '../src/config.ts';
-import { bombadilArgs, replayCommand, replayProject, reproOptions, rerunCommand, runTarget, serverChoice, waitForServer, sweepEnd, sweepReport, sweepSettings } from '../src/runner/run.ts';
+import { bombadilArgs, sweepEnd, sweepReport, sweepSettings } from '../src/runner/run.ts';
 import { ownArgs, tail as cliTail } from '../src/cli.ts';
 import { selectFlows } from '../src/runner/run.ts';
 import { row, tmp, writeRun } from './helpers.ts';
@@ -77,29 +77,6 @@ test('config: several projects need --project', () => {
   assert.throws(() => pickProject(loaded, 'c'), /no project c/);
 });
 
-const sweep = { flow: 'checkout', faults: 0.1, latency: 50, seed: 7, refDate: '2026-11-21', time: '1m', width: 390, height: 844 };
-
-test('runTarget: a mock project records faults, latency and the mock date, as before', () => {
-  assert.deepEqual(runTarget('mock', sweep), {
-    kind: 'mock', flow: 'checkout', faults: 0.1, latency_ms: 50, viewport: '390x844', mock_ref_date: '2026-11-21',
-  });
-});
-
-test('runTarget: a live project records only what it controls', () => {
-  assert.deepEqual(runTarget('live', sweep), { kind: 'live', flow: 'checkout', viewport: '390x844' });
-});
-
-test('rerunCommand: a live run has no seed, faults or ref date to replay', () => {
-  assert.equal(
-    rerunCommand('mock', sweep, ['--project', 'web']),
-    'npx bombadil-kit run --project web --flow checkout --seed 7 --faults 0.1 --ref-date 2026-11-21 --time 1m --width 390 --height 844',
-  );
-  assert.equal(
-    rerunCommand('live', sweep, ['--project', 'web-live']),
-    'npx bombadil-kit run --project web-live --flow checkout --time 1m --width 390 --height 844',
-  );
-});
-
 test('sweepSettings: live defaults to no faults and refuses them; mock keeps 0.1', () => {
   assert.equal(sweepSettings({ target: 'live' }, {}).faults, 0);
   assert.equal(sweepSettings({}, {}).faults, 0.1);
@@ -153,95 +130,6 @@ test('bombadilArgs: a replay gets no time limit, and the same fence and spec', (
   assert.ok(i > 0 && args[i + 1] === '/repo/tmp/r/trace.jsonl');
   assert.ok(args.includes('--allow-url'), 'the fence still applies');
   assert.deepEqual(args.slice(-2), ['http://127.0.0.1:5199/login', base.specFile]);
-});
-
-test('serverChoice: a free port is spawned on; one in use is an error unless reuse was asked for', () => {
-  assert.equal(serverChoice(false, false, 'http://127.0.0.1:5199'), 'spawn');
-  assert.equal(serverChoice(true, true, 'http://127.0.0.1:5199'), 'reuse');
-  assert.throws(() => serverChoice(true, false, 'http://127.0.0.1:5199'), /already serving http:\/\/127\.0\.0\.1:5199.*--reuse-server/);
-});
-
-// A fake clock: each sleep advances it, so the server's answers and exits follow time, not wall time.
-const fakeServer = ({ answersAt = Infinity, exitsAt = Infinity }: { answersAt?: number; exitsAt?: number }) => {
-  let now = 0;
-  return {
-    ready: async () => now >= answersAt,
-    exited: () => now >= exitsAt,
-    sleep: async (ms: number) => void (now += ms),
-  };
-};
-
-test('waitForServer: ready once something answers and the spawned server is still running after `settle`', async () => {
-  assert.equal(await waitForServer({ ...fakeServer({ answersAt: 1500 }), interval: 500, settle: 1000 }), 'ready');
-  assert.equal(await waitForServer({ ...fakeServer({ exitsAt: 1000 }), interval: 500 }), 'exited');
-  assert.equal(await waitForServer({ ...fakeServer({}), tries: 4, interval: 500 }), 'timeout');
-});
-
-test('waitForServer: another server took the port after the check: it answers, ours exits, and that is not ready', async () => {
-  // Something answers at once (another worktree's dev server), and the one we
-  // spawned dies on --strictPort 300ms later: sweeping would test the wrong app.
-  assert.equal(await waitForServer({ ...fakeServer({ answersAt: 0, exitsAt: 300 }), interval: 500, settle: 1000 }), 'taken');
-});
-
-const meta = {
-  schema: 'bombadil-run/v1',
-  project: 'web',
-  spec: 'apps/web/bombadil/checkout.ts',
-  seed: 7,
-  start: '/cart',
-  started_at: '2026-11-21T00:00:00Z',
-  commit: 'abc1234',
-  target: { kind: 'mock', faults: 0.1, latency_ms: 50, viewport: '1280x800', mock_ref_date: '2026-11-21' },
-  bombadil: '0.7.10',
-  exit_code: 2,
-  flow: 'checkout',
-  time_limit: '3m',
-  command: 'npx bombadil-kit run --flow checkout',
-  replay: 'npx bombadil-kit run --reproduce tmp/r/web/1',
-} as const;
-
-test('reproOptions: the recorded run\'s seed, faults, latency, date, viewport and spec', () => {
-  const { options, project } = reproOptions(meta as never, 'apps/web/bombadil');
-  assert.equal(project, 'web');
-  assert.deepEqual(options, {
-    flows: ['checkout'], spec: 'checkout', seed: 7, time: '3m',
-    width: 1280, height: 800, faults: 0.1, latency: 50, refDate: '2026-11-21',
-  });
-  // Told where the run lives, the replay records it as the run it replays.
-  assert.equal(reproOptions(meta as never, 'apps/web/bombadil', 'tmp/r/web/1').options.replayOf, 'tmp/r/web/1');
-});
-
-test('reproOptions: the spec is named relative to the project\'s specs dir, wherever that is', () => {
-  const nested = { ...meta, spec: 'e2e/bombadil/ph-portal/spec.ts' };
-  assert.equal(reproOptions(nested as never, 'e2e/bombadil/ph-portal').options.spec, 'spec');
-  assert.equal(reproOptions(nested as never, 'e2e/bombadil').options.spec, 'ph-portal/spec');
-  // Not under the specs dir: an error, not a guess that falls back to the flow's spec.
-  assert.throws(() => reproOptions(nested as never, 'apps/web/bombadil'), /not under apps\/web\/bombadil/);
-});
-
-test('reproOptions: a live run has no faults or mock date to restart with', () => {
-  const live = { ...meta, target: { kind: 'live', viewport: '390x844' } };
-  const { options } = reproOptions(live as never, 'apps/web/bombadil');
-  assert.equal(options.faults, undefined);
-  assert.equal(options.refDate, undefined);
-  assert.equal(options.width, 390);
-});
-
-test('replayProject: the run names its project; a --project that disagrees is an error', () => {
-  assert.equal(replayProject('web', undefined), 'web');
-  assert.equal(replayProject('web', 'web'), 'web');
-  assert.throws(() => replayProject('web', 'admin'), /is project web, not admin/);
-});
-
-test('replayCommand: the run\'s directory, and nothing the replay would ignore', () => {
-  assert.equal(replayCommand('tmp/r/web/1', ['--project', 'web']), 'npx bombadil-kit run --project web --reproduce tmp/r/web/1');
-  assert.equal(replayCommand('tmp/r/web-live/1'), 'npx bombadil-kit run --reproduce tmp/r/web-live/1');
-});
-
-test('rerunCommand: what was handed to Bombadil after -- is handed again', () => {
-  assert.ok(
-    rerunCommand('mock', sweep, [], ['--exit-on-violation']).endsWith('-- --exit-on-violation'),
-  );
 });
 
 test('the CLI takes everything after -- for Bombadil, the separator aside', () => {

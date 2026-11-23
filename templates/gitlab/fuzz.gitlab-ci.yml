@@ -151,6 +151,7 @@ fuzz:
           if [ "$q" = "$p" ]; then flows+=(--flow "$f"); fi
         done < tmp/plan.txt
         # 2 = a property violation; whether it's new is the gate's call.
+        # Anything else (1: no server, no spec, Bombadil failing) stops the job.
         # --no-sandbox: the container runs as root, and Chromium refuses.
         rc=0
         npx bombadil-kit run --project "$p" --no-sandbox --time "${per}s" --seed "$seed" "${flows[@]}" || rc=$?

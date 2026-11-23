@@ -77,10 +77,10 @@ const cmdRun = async (loaded: Loaded, argv: string[]) => {
     // Everything after `--` is Bombadil's: parseArgs stops at the separator, so
     // the tail is read from argv, where `--` still stands (see tail()).
   });
-  // A replay's project is the one its run.json names (see reproduce()); only a
+  // A replay's project is the one its run.json names (see replay() in runner/run.ts); only a
   // fresh run has to pick one, which several projects make --project's job.
   const project = values.reproduce ? (values.project ?? '') : pickProject(loaded, values.project)[0];
-  return run(loaded, {
+  const { status } = await run(loaded, {
     project,
     flows: values.flow,
     spec: values.spec,
@@ -100,6 +100,7 @@ const cmdRun = async (loaded: Loaded, argv: string[]) => {
     reuseServer: values['reuse-server'],
     report: !values['no-report'],
   });
+  return status;
 };
 
 const cmdList = (loaded: Loaded, argv: string[]) => {
@@ -224,11 +225,16 @@ const main = async () => {
     console.error(USAGE);
     process.exit(command && !['-h', '--help'].includes(command) ? 2 : 0);
   }
+  // A command's own status passes through as it is: `run`'s 0/1/2 is the
+  // sweep's (runner/run.ts), `report --fail-on`'s 1 is the gate tripping.
+  // Anything thrown is an error, and its code must differ from both: for `run`
+  // 1, never 2 (CI reads `run`'s 2 as "violations found"); for the others 2,
+  // never 1 (CI reads `report`'s 1 as "something new").
   try {
     process.exit(await commands[command]!(loadConfig(), rest));
   } catch (err) {
     console.error(`bombadil-kit ${command}: ${(err as Error).message}`);
-    process.exit(2);
+    process.exit(command === 'run' ? 1 : 2);
   }
 };
 
