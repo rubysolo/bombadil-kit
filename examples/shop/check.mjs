@@ -63,6 +63,13 @@ const sweep = (plant) => {
     if (rc !== 2) problems.push(`exit ${rc}, want 2`);
     if (!fired.includes(p.property)) problems.push(`${p.property} never fired (fired: ${fired.join(', ') || 'nothing'})`);
   }
+  // A failed write's finding names its endpoint as API coverage does: one
+  // endpoint, one name, across both views (src/path-template.ts).
+  for (const f of seen.filter((f) => f.property === 'failedWritesAreShown')) {
+    const request = f.snapshots?.[0]?.value?.request;
+    const endpoints = report.projects.find((x) => x.name === f.project)?.api?.endpoints.map((e) => e.key) ?? [];
+    if (endpoints.length && !endpoints.includes(request)) problems.push(`${f.id} names ${request}, not an endpoint API coverage lists`);
+  }
   const name = plant ?? 'clean';
   if (problems.length) console.error(`✗ ${name}: ${problems.join('; ')}`);
   else if (p?.known) console.error(`~ ${name}: known gap, ${p.property} ${fired.includes(p.property) ? 'fired this time' : 'did not fire'}: ${p.known}`);

@@ -1,6 +1,7 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { CallOutcome } from '../page-protocol.ts';
+import { endpointOf } from '../path-template.ts';
 import { describeAction, detailKey, detailText, findingId, routeTemplate, type Snapshot } from './findings.ts';
 import { readRunRecord, type RunRecord } from './record.ts';
 
@@ -93,9 +94,7 @@ const snapshotsIn = (node: unknown, out: Snapshot[] = []): Snapshot[] => {
 export const endpointKey = (key: string, inventory: readonly string[]): string => {
   const m = /^([A-Z]+) (\/\S*)$/.exec(key);
   if (!m || inventory.includes(key)) return key;
-  const [, method, path] = m;
-  const templates = inventory.filter((k) => k.startsWith(`${method} /`)).map((k) => k.slice(method!.length + 1));
-  return `${method} ${routeTemplate(path!.split('?')[0]!, templates)}`;
+  return endpointOf(m[1]!, m[2]!, inventory);
 };
 
 type ApiSnap = { calls?: { key: string; variant?: string; outcome: CallOutcome }[]; inventory?: { key: string; variants?: string[] }[] };

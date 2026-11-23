@@ -5,6 +5,7 @@
 // bombadil-kit/faults logs; a mock layer of the app's own can push the same
 // entries.
 import type { FaultKind, InjectedFault } from '../src/page-protocol.ts';
+import { endpointOf } from '../src/path-template.ts';
 
 export type { FaultKind, InjectedFault };
 
@@ -131,20 +132,15 @@ export const unannouncedWrite = (
 };
 
 /**
- * A path segment that names a record rather than an endpoint: all digits, a
- * longer one with digits in it (a UUID, `P12345`), or an upper-case slug
- * (`TEST-BASIC-ORDER`).
- */
-const isRecordSegment = (seg: string) =>
-  /^\d+$/.test(seg) || (seg.length >= 4 && /\d/.test(seg)) || /^[A-Z][A-Z0-9]*(?:[-_][A-Z0-9]+)+$/.test(seg);
-
-/**
- * The endpoint a request hit, for a finding's id: `METHOD /path` with record
- * segments as `:id`. One bug, one finding, whatever the status or the record:
+ * The endpoint a request hit, for a finding's id: `METHOD /template`, the
+ * first of the mock's `endpoints` (`METHOD /path` keys, __mockEndpoints) for
+ * that method that matches, else the path with record segments as `:id`
+ * (src/path-template.ts, the rule the report's routes and API coverage use).
+ * One bug, one finding, whatever the status or the record:
  * `POST /orders/TEST-BASIC-ORDER/design_requests` → `POST /orders/:id/design_requests`.
+ * A key that isn't a path (`REMOTE OrderController.saveOrder`) is kept.
  */
-export const requestPattern = (method: string, path: string) =>
-  `${method} ${path.split('/').map((seg) => (isRecordSegment(seg) ? ':id' : seg)).join('/')}`;
+export const requestPattern = (method: string, path: string, endpoints: readonly string[] = []) => endpointOf(method, path, endpoints);
 
 /**
  * consoleQuietUnlessFaulted's excuse: a fault that may still be making the app
