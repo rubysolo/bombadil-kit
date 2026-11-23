@@ -2,7 +2,7 @@ import type { RunTarget } from './record.ts';
 import type { ProjectInfo } from './project.ts';
 import type { Snapshot } from './findings.ts';
 import type { ApiCoverage, Step } from './runs.ts';
-import type { CallOutcome } from '../app/faults.ts';
+import type { CallOutcome } from '../page-protocol.ts';
 import { mergeApi, statusOf, type FindingRecord, type FlowMilestones, type RunInfo, type State, type Status } from './state.ts';
 
 /**

@@ -1,7 +1,7 @@
 // The pure half of milestones: no Bombadil imports, so node can test it.
-// spec/index.ts calls it inside `extract`. `import type` is erased, so the
-// bundle Bombadil runs in the page doesn't pull in the app-side module.
-import type { MockCall } from '../src/app/faults.ts';
+// spec/index.ts calls it inside `extract`. The window's fields are the page
+// protocol's (src/page-protocol.ts).
+import type { MockWindow } from '../src/page-protocol.ts';
 
 /** A milestone's test: true once the workflow got there (a success banner shows, the fields hold the new values). */
 export type MilestonePredicate = (doc: Document, win: Window) => boolean;
@@ -14,11 +14,10 @@ export type MilestonePredicate = (doc: Document, win: Window) => boolean;
  */
 export type MilestoneDef = MilestonePredicate | { holds: MilestonePredicate; after: string | RegExp };
 
-export type MilestoneWindow = {
+export type MilestoneWindow = Pick<MockWindow, '__mockCalls'> & {
   __fuzzMilestones?: Record<string, boolean>;
   /** Per `after` milestone, the __mockCalls length at its predicate's last true state. */
   __fuzzMilestonesSince?: Record<string, number>;
-  __mockCalls?: MockCall[];
 };
 
 const matches = (after: string | RegExp, key: string): boolean => {

@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { inFence } from '../spec/fence.ts';
 
-const FENCE = '/products/*,/cart,/orders/*';
+const FENCE = ['/products/*', '/cart', '/orders/*'];
 
 test('inFence: exact paths and * prefixes', () => {
   assert.equal(inFence(FENCE, '/cart'), true);
@@ -21,5 +21,6 @@ test('inFence: a query or hash on the path is ignored', () => {
 
 test('inFence: no fence lets every path in', () => {
   assert.equal(inFence(null, '/anywhere'), true);
-  assert.equal(inFence('', '/anywhere'), true);
+  assert.equal(inFence(undefined, '/anywhere'), true);
+  assert.equal(inFence([], '/anywhere'), true);
 });

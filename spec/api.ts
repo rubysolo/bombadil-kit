@@ -1,9 +1,9 @@
 // The pure half of apiCalls: no Bombadil imports, so node can test it.
-// spec/index.ts calls it inside `extract`. `import type` is erased, so the
-// bundle Bombadil runs in the page doesn't pull in the app-side module.
-import type { CallOutcome, MockCall, MockEndpoint } from '../src/app/faults.ts';
+// spec/index.ts calls it inside `extract`. The window's fields are the page
+// protocol's (src/page-protocol.ts).
+import type { CallOutcome, MockCall, MockEndpoint, MockWindow } from '../src/page-protocol.ts';
 
-export type { CallOutcome, MockCall, MockEndpoint } from '../src/app/faults.ts';
+export type { CallOutcome, MockCall, MockEndpoint };
 
 /** The `api` snapshot: calls since the last state, and the inventory on a document's first state. */
 export type ApiSnapshot = {
@@ -11,7 +11,7 @@ export type ApiSnapshot = {
   inventory?: { key: string; variants: string[] }[];
 };
 
-export type ApiWindow = { __mockCalls?: MockCall[]; __mockEndpoints?: MockEndpoint[]; __fuzzApi?: { seen: number; inventory: boolean; seq?: number } };
+export type ApiWindow = Pick<MockWindow, '__mockCalls' | '__mockEndpoints'> & { __fuzzApi?: { seen: number; inventory: boolean; seq?: number } };
 
 /** What `win`'s mock layer has logged since the last call, as an ApiSnapshot. Keeps its place on `win`. */
 export const freshApiCalls = (win: ApiWindow): ApiSnapshot => {

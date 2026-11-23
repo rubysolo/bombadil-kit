@@ -250,30 +250,22 @@ test('startMockRequest: counts a request on window.__mockPending until done, onc
     assert.equal(w.__mockPending, 0);
   }));
 
-test('mockBusyMs: the time anything was in flight, overlaps counted once', () =>
+// The busy clock itself is tested through the page protocol (page-protocol.test.ts).
+test('mockBusyMs: the page protocol busy clock, on the global window', () =>
   withWindow((w) => {
     let now = 1000;
     const clock = () => now;
     assert.equal(mockBusyMs(clock), 0);
-    const a = startMockRequest(clock);
-    now = 1100;
-    const b = startMockRequest(clock);
+    const done = startMockRequest(clock);
     now = 1150;
-    a();
     assert.equal(mockBusyMs(clock), 150);
-    now = 1200;
-    b();
-    now = 5000;
-    assert.equal(mockBusyMs(clock), 200);
-    const c = startMockRequest(clock);
-    now = 5030;
-    assert.equal(mockBusyMs(clock), 230);
-    c();
-    assert.equal(w.__mockPending, 0);
+    done();
+    assert.equal(w.__mockBusyMs, 150);
   }));
 
-test('startMockRequest: harmless outside a browser', () => {
+test('startMockRequest, mockBusyMs: harmless outside a browser', () => {
   assert.doesNotThrow(() => startMockRequest()());
+  assert.equal(mockBusyMs(), 0);
 });
 
 test('withFaults: in fuzz mode, every request is pending until it answers, faults on or off', () =>

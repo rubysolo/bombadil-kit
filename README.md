@@ -178,7 +178,8 @@ a form. `flows.json` splits the app into workflows:
   without leaving its fence.
 - The run also hands the page `fuzz_seed`, `fuzz_faults` and `fuzz_ref_date`:
   the same values `server.env` is given, for a bundle built before the run and
-  so able to read only the URL and the cookies.
+  so able to read only the URL and the cookies. bombadil-kit/faults'
+  `decodeCookies(document.cookie)` reads them (`{ seed, faults, refDate }`).
 - `signedIn`: start with `signedInCookie`. The app has to accept a session
   from a cookie in mock mode; see [prompts/INTEGRATE.md](prompts/INTEGRATE.md).
 - `spec`: which spec file runs it.

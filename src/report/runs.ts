@@ -1,6 +1,6 @@
 import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
-import type { CallOutcome } from '../app/faults.ts';
+import type { CallOutcome } from '../page-protocol.ts';
 import { describeAction, detailKey, detailText, findingId, routeTemplate, type Snapshot } from './findings.ts';
 import { readRunRecord, type RunRecord } from './record.ts';
 

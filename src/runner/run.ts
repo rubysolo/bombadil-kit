@@ -4,6 +4,7 @@ import { fill, projectRoutes, readFlows, specsDir, type Flow, type Loaded, type 
 import { buildRun, readRunRecord, replayProject, replaySettings, writeRunRecord, type RunRecord } from '../report/record.ts';
 import { generate } from '../report/generate.ts';
 import { summaryLine } from '../report/report.ts';
+import { encodeCookies } from '../page-protocol.ts';
 import { realProcesses, type Processes, type Server } from './processes.ts';
 
 export interface RunOptions {
@@ -110,16 +111,13 @@ export const bombadilArgs = (o: {
     if (!o.signedInCookie) throw new Error(`flow ${o.flow.name} is signedIn but the project has no signedInCookie`);
     args.push('--cookie', o.signedInCookie);
   }
-  // What the spec library reads (spec/index.ts): the fence, which pushState
-  // navigations never show --allow-url, and where source files live.
-  args.push('--cookie', `fuzz_fence=${encodeURIComponent(o.flow.allow.join(','))}`);
-  args.push('--cookie', `fuzz_root=${encodeURIComponent(o.root)}`);
-  args.push('--cookie', `fuzz_app=${encodeURIComponent(o.appDir)}`);
-  // What an app's mock reads when server.env can't reach import.meta.env: a
-  // prebuilt static bundle sees only the URL and the cookies.
-  if (o.seed !== undefined) args.push('--cookie', `fuzz_seed=${o.seed}`);
-  if (o.faults !== undefined) args.push('--cookie', `fuzz_faults=${o.faults}`);
-  if (o.refDate !== undefined) args.push('--cookie', `fuzz_ref_date=${o.refDate}`);
+  // The page protocol's cookies (src/page-protocol.ts). What the spec library
+  // reads: the fence, which pushState navigations never show --allow-url, and
+  // where source files live. What an app's mock reads when server.env can't
+  // reach import.meta.env (a prebuilt static bundle sees only the URL and the
+  // cookies): the seed, fault rate and mock date.
+  const cookies = encodeCookies({ fence: o.flow.allow, root: o.root, app: o.appDir, seed: o.seed, faults: o.faults, refDate: o.refDate });
+  for (const cookie of cookies) args.push('--cookie', cookie);
   // Everything the user put after `--`, as they wrote it: Bombadil reads it, and
   // refuses a --reproduce beside --exit-on-violation, which is its business.
   args.push(...(o.extra ?? []));
