@@ -10,6 +10,12 @@
 
 // ---------------------------------------------------------------- the window
 
+/**
+ * What a Fault fails with: an HTTP status, or RTK Query's own for a request
+ * that never got one. bombadil-kit/faults' Fault is checked against it.
+ */
+export type FaultStatus = number | 'FETCH_ERROR' | 'TIMEOUT_ERROR';
+
 /** See InjectedFault's `kind`. */
 export type FaultKind = 'error' | 'slow' | 'hang';
 
@@ -19,7 +25,7 @@ export interface InjectedFault {
   /** The endpoint: a path, or e.g. `Controller.method`. */
   path: string;
   /** What the request failed with (a Fault's status); a status of the mock layer's own for faults that aren't HTTP. */
-  status: number | 'FETCH_ERROR' | 'TIMEOUT_ERROR' | (string & {});
+  status: FaultStatus | (string & {});
   /**
    * `Date.now()` when the fault was injected. For `slow` and `hang`: when the
    * request started. For `'error'`: when the failure reached the app if the

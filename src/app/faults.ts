@@ -37,6 +37,7 @@ export type Fault =
   | { status: number; data?: unknown }
   | { status: 'FETCH_ERROR'; error: string }
   | { status: 'TIMEOUT_ERROR'; error: string };
+// Its statuses are the page protocol's FaultStatus (test/app.test.ts checks both ways).
 
 // The window fields and their types are the page protocol, shared with the
 // spec: see src/page-protocol.ts.
@@ -48,6 +49,7 @@ import {
   decodeCookies,
   type CallOutcome,
   type FaultKind,
+  type FaultStatus,
   type InjectedFault,
   type MockCall,
   type MockEndpoint,
@@ -55,7 +57,7 @@ import {
   type PageCookies,
 } from '../page-protocol.ts';
 
-export type { CallOutcome, FaultKind, InjectedFault, MockCall, MockEndpoint, MockWindow, PageCookies };
+export type { CallOutcome, FaultKind, FaultStatus, InjectedFault, MockCall, MockEndpoint, MockWindow, PageCookies };
 /** The runner's cookies (fuzz_seed, fuzz_faults, fuzz_ref_date…), for a mock that reads them: `decodeCookies(document.cookie)`. */
 export { COOKIES, decodeCookies };
 

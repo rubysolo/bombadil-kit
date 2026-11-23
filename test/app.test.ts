@@ -4,7 +4,7 @@ import { faker } from '@faker-js/faker';
 import type { BaseQueryApi, BaseQueryFn, FetchArgs, FetchBaseQueryError } from '@reduxjs/toolkit/query';
 import { appFrames, deepStack, formatConsoleArgs } from '../src/app/console.ts';
 import { seedFaker, parseMockSeed } from '../src/app/faker.ts';
-import { createFaultInjector, mockBusyMs, parseFaultConfig, startMockRequest } from '../src/app/faults.ts';
+import { createFaultInjector, mockBusyMs, parseFaultConfig, startMockRequest, type Fault, type FaultStatus, type MockWindow } from '../src/app/faults.ts';
 import { withFaults } from '../src/app/rtk.ts';
 
 // ------------------------------------------------------------------ faults
@@ -45,12 +45,19 @@ test('createFaultInjector: spares /mock/ by default, or what it is given', () =>
   assert.ok(custom('POST', '/mock/reset'));
 });
 
+test("Fault's statuses are the page protocol's FaultStatus, both ways", () => {
+  // A status added to Fault and not to FaultStatus (or back) fails the typecheck here.
+  type Same<A, B> = [A] extends [B] ? ([B] extends [A] ? true : false) : false;
+  const same: Same<Fault['status'], FaultStatus> = true;
+  assert.equal(same, true);
+});
+
 test('createFaultInjector: logs each fault on window.__mockFaults', () => {
-  const g = globalThis as { window?: { __mockFaults?: unknown[] } };
+  const g = globalThis as { window?: MockWindow };
   g.window = {};
   try {
     createFaultInjector({ rate: 1, seed: 1 })('post', '/orders');
-    const [logged] = g.window.__mockFaults as { method: string; path: string; at: number }[];
+    const [logged] = g.window.__mockFaults!;
     assert.equal(logged!.method, 'POST');
     assert.equal(logged!.path, '/orders');
     assert.ok(Math.abs(logged!.at - Date.now()) < 1000);
@@ -60,7 +67,7 @@ test('createFaultInjector: logs each fault on window.__mockFaults', () => {
 });
 
 test('createFaultInjector: isWrite fills `write`; without it there is none', () => {
-  const g = globalThis as { window?: { __mockFaults?: { write?: boolean }[] } };
+  const g = globalThis as { window?: MockWindow };
   g.window = {};
   try {
     const isWrite = (_method: string, path: string) => /\.(save|delete)\w*$/.test(path);
@@ -76,7 +83,7 @@ test('createFaultInjector: isWrite fills `write`; without it there is none', () 
 });
 
 test('createFaultInjector: `delivered` stamps deliveredAt = at; without it there is none', () => {
-  const g = globalThis as { window?: { __mockFaults?: { at: number; deliveredAt?: number }[] } };
+  const g = globalThis as { window?: MockWindow };
   g.window = {};
   try {
     createFaultInjector({ rate: 1, seed: 1, delivered: true })('POST', '/orders');
@@ -90,7 +97,7 @@ test('createFaultInjector: `delivered` stamps deliveredAt = at; without it there
 });
 
 test('createFaultInjector: logs every call on window.__mockCalls, ok or error', () => {
-  const g = globalThis as { window?: { __mockCalls?: { key: string; outcome: string; at: number }[] } };
+  const g = globalThis as { window?: MockWindow };
   g.window = {};
   try {
     createFaultInjector({ rate: 1, seed: 1 })('post', '/orders');
@@ -104,7 +111,7 @@ test('createFaultInjector: logs every call on window.__mockCalls, ok or error', 
     ]);
     assert.ok(Math.abs(calls[0]!.at - Date.now()) < 1000);
     // seq counts up across injectors, so freshApiCalls survives a capped log.
-    const seqs = (calls as { seq?: number }[]).map((c) => c.seq!);
+    const seqs = calls.map((c) => c.seq!);
     assert.ok(seqs.every((n, i) => Number.isInteger(n) && (i === 0 || n > seqs[i - 1]!)), String(seqs));
   } finally {
     delete g.window;
@@ -117,7 +124,7 @@ const api = {} as BaseQueryApi;
 const ok: BaseQueryFn<string | FetchArgs, string, FetchBaseQueryError> = () => ({ data: 'ok' });
 
 test('withFaults: passes isWrite to the injector', async () => {
-  const g = globalThis as { window?: { __mockFaults?: { write?: boolean }[] } };
+  const g = globalThis as { window?: MockWindow };
   g.window = {};
   try {
     await withFaults(ok, { VITE_MOCK_FAULT_RATE: '1' }, { isWrite: () => true })('/orders', api, {});
@@ -128,7 +135,7 @@ test('withFaults: passes isWrite to the injector', async () => {
 });
 
 test('withFaults: answers with the fault at once, so it logs deliveredAt', async () => {
-  const g = globalThis as { window?: { __mockFaults?: { at: number; deliveredAt?: number }[] } };
+  const g = globalThis as { window?: MockWindow };
   g.window = {};
   try {
     await withFaults(ok, { VITE_MOCK_FAULT_RATE: '1' })('/orders', api, {});
@@ -227,9 +234,9 @@ test('deepStack sees past V8’s default 10 frames, and puts the limit back', ()
 
 // ---------------------------------------------------------------- in flight
 
-type BusyWindow = { __mockPending?: number; __mockBusyMs?: number; __mockBusySince?: number };
-const withWindow = async (fn: (w: BusyWindow) => Promise<void> | void) => {
-  const g = globalThis as { window?: BusyWindow };
+// The mock layer's window fields, from the page protocol (not a copy of them).
+const withWindow = async (fn: (w: MockWindow) => Promise<void> | void) => {
+  const g = globalThis as { window?: MockWindow };
   g.window = {};
   try {
     await fn(g.window);
@@ -290,18 +297,16 @@ test('withFaults: at --faults 0 it fails nothing but still logs every call', () 
   withWindow(async (w) => {
     const bq = withFaults(ok, { VITE_MOCK_FAULT_RATE: '0' });
     for (let i = 0; i < 20; i++) assert.deepEqual(await bq('/orders', api, {}), { data: 'ok' });
-    const calls = (w as { __mockCalls?: unknown[] }).__mockCalls ?? [];
+    const calls = w.__mockCalls ?? [];
     assert.equal(calls.length, 20);
   }));
 
 // ------------------------------------------------------------ fault latency
 
-type FaultWindow = BusyWindow & { __mockFaults?: { at: number; deliveredAt?: number }[] };
 const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
 
 test('withFaults: a fault takes `latency` ms, in flight meanwhile, logged at the start with deliveredAt', () =>
-  withWindow(async (win) => {
-    const w = win as FaultWindow;
+  withWindow(async (w) => {
     const bq = withFaults(ok, { VITE_MOCK_FAULT_RATE: '1' }, { latency: 40 });
     const started = Date.now();
     const res = bq('/orders', api, {});
@@ -347,8 +352,7 @@ test('withFaults: a fault abandoned while it waits (abort) answers at once', () 
   }));
 
 test('createFaultInjector: deliverIn stamps deliveredAt = at + it, and wins over `delivered`', () =>
-  withWindow((win) => {
-    const w = win as FaultWindow;
+  withWindow((w) => {
     const inject = createFaultInjector({ rate: 1, seed: 1, delivered: true });
     inject('POST', '/orders', 250);
     inject('POST', '/orders', () => 100);
