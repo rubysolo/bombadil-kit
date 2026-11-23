@@ -12,8 +12,10 @@ test('routeTemplate prefers a known route pattern', () => {
 
 test('routeTemplate falls back to replacing ids and order numbers', () => {
   assert.equal(routeTemplate('http://h/orders/1187/store', []), '/orders/:id/store');
-  assert.equal(routeTemplate('http://h/orders/ORD12345', []), '/orders/:n');
-  assert.equal(routeTemplate('http://h/orders/ACTIVE-STORE/team-detail#', []), '/orders/:n/team-detail');
+  assert.equal(routeTemplate('http://h/orders/ORD12345', []), '/orders/:id');
+  assert.equal(routeTemplate('http://h/orders/ACTIVE-STORE/team-detail#', []), '/orders/:id/team-detail');
+  assert.equal(routeTemplate('http://h/users/3f9c2a10-7b1e-4c2d-9a51-0e8f6b7c2d11', []), '/users/:id');
+  assert.equal(routeTemplate('http://h/API/orders', []), '/API/orders');
   assert.equal(routeTemplate('http://h/', []), '/');
 });
 

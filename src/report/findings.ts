@@ -1,4 +1,5 @@
 import { createHash } from 'node:crypto';
+import { templateOf } from '../path-template.ts';
 
 /**
  * Pure helpers that turn Bombadil's raw trace values into stable, readable
@@ -14,31 +15,12 @@ const pathOf = (url: string): string => {
   }
 };
 
-const matches = (pattern: string, path: string): boolean => {
-  const a = pattern.split('/');
-  const b = path.split('/');
-  if (a.length !== b.length) return false;
-  return a.every((seg, i) => seg.startsWith(':') || seg === '*' || seg === b[i]);
-};
-
-// An order number (ORD12345), a fixture name (ACTIVE-STORE) or a numeric id.
-const ID = /^\d+$/;
-const TOKEN = /^(?=.*[A-Z])[A-Z0-9]+(?:[-_][A-Z0-9]+)*$/;
-
 /**
  * The route a URL belongs to: the first matching pattern from `known` (the
- * project's route list), else its path with ids replaced by `:id` and
- * order numbers or fixture names by `:n`. Query and fragment are dropped.
+ * project's route list), else its path with record segments as `:id`
+ * (templateOf). Query and fragment are dropped.
  */
-export const routeTemplate = (url: string, known: readonly string[]): string => {
-  const path = pathOf(url);
-  const hit = known.find((pattern) => matches(pattern, path));
-  if (hit) return hit;
-  return path
-    .split('/')
-    .map((seg) => (ID.test(seg) ? ':id' : TOKEN.test(seg) ? ':n' : seg))
-    .join('/');
-};
+export const routeTemplate = (url: string, known: readonly string[]): string => templateOf(pathOf(url), known);
 
 export interface Snapshot {
   name: string | null;

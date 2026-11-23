@@ -253,6 +253,20 @@ test('requestPattern: record segments become :id, endpoint names stay', () => {
   assert.equal(requestPattern('POST', '/api/v2/design_requests'), 'POST /api/v2/design_requests');
   assert.equal(requestPattern('DELETE', '/session'), 'DELETE /session');
   assert.equal(requestPattern('REMOTE', 'OrderController.saveOrder'), 'REMOTE OrderController.saveOrder');
+  assert.equal(requestPattern('POST', '/api/oauth2/token'), 'POST /api/oauth2/token');
+  assert.equal(requestPattern('GET', '/orders/1187?tab=2'), 'GET /orders/:id');
+});
+
+test("requestPattern: the mock's inventory for the method first, as API coverage names it", async () => {
+  const { endpointKey } = await import('../src/report/runs.ts');
+  const endpoints = ['POST /orders/:orderNumber/design_requests', 'GET /orders/:orderNumber'];
+  const path = '/orders/TEST-BASIC-ORDER/design_requests';
+  assert.equal(requestPattern('POST', path, endpoints), 'POST /orders/:orderNumber/design_requests');
+  assert.equal(requestPattern('PUT', path, endpoints), 'PUT /orders/:id/design_requests');
+  // A finding and API coverage read the same, with or without an inventory.
+  for (const [method, p, inv] of [['POST', path, endpoints], ['POST', path, []], ['DELETE', '/users/3f9c2a10-7b1e-4c2d-9a51-0e8f6b7c2d11', []]] as const) {
+    assert.equal(requestPattern(method, p, inv), endpointKey(`${method} ${p}`, [...inv]));
+  }
 });
 
 test("failedWritesShown's snapshot: one id per endpoint and page, whatever the status or record", async () => {

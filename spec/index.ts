@@ -261,8 +261,12 @@ export interface FailedWritesOptions {
    * drops it and leaving after reports it. Default 1000.
    */
   leaveGrace?: number;
-  /** The endpoint, for the finding's id. Default requestPattern: record segments of the path as `:id`. */
-  request?: (method: string, path: string) => string;
+  /**
+   * The endpoint, for the finding's id. Gets the mock's inventory keys
+   * (`__mockEndpoints`) as `endpoints`. Default requestPattern: the matching
+   * inventory template, else record segments of the path as `:id`.
+   */
+  request?: (method: string, path: string, endpoints: readonly string[]) => string;
 }
 
 /**
@@ -294,7 +298,7 @@ export const failedWritesShown = ({
     // `request` first: the report names a finding, and builds its id, from
     // the first string, so one endpoint's failures are one finding whatever
     // the status or record. The full line is the evidence.
-    return fault ? { request: request(fault.method, fault.path), fault: faultLine(fault) } : null;
+    return fault ? { request: request(fault.method, fault.path, (win.__mockEndpoints ?? []).map((e) => e.key)), fault: faultLine(fault) } : null;
   });
   return always(() => unannounced.current === null);
 };
