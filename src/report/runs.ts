@@ -2,37 +2,7 @@ import { existsSync, readdirSync, readFileSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { CallOutcome } from '../app/faults.ts';
 import { describeAction, detailKey, detailText, findingId, routeTemplate, type Snapshot } from './findings.ts';
-
-/** What scripts/bombadil.sh writes next to each run's trace. */
-export interface RunMeta {
-  project: string;
-  spec: string;
-  seed: number;
-  start: string;
-  started_at: string;
-  commit: string;
-  target: Record<string, unknown>;
-  bombadil: string;
-  exit_code: number;
-  /** How to run it again, from the repo root. */
-  command?: string;
-  /** The flow it ran (bombadil/flows.json); runs from before flows have none. */
-  flow?: string;
-  /** The milestones its flow declares (flows.json `milestones`); absent when none. */
-  expected_milestones?: string[];
-  /** How to replay this run's trace, from the repo root; runs from before it has none. */
-  replay?: string;
-  /**
-   * Set on a `--reproduce` run: the run directory it replayed, repo-relative.
-   * A replay can stop early (Bombadil's "diverged"), so it reaches routes
-   * without testing them: the report lists it but never counts it as a sweep.
-   */
-  replay_of?: string;
-  /** What the run handed Bombadil after `--`; absent when there was nothing. */
-  bombadil_args?: string[];
-  /** How long it explored, as it was given. */
-  time_limit?: string;
-}
+import { readRunRecord, type RunRecord } from './record.ts';
 
 export interface Step {
   at: string;
@@ -75,7 +45,8 @@ export interface RunResult {
   /** `<project>/<run dir name>`, unique across the runs root. */
   id: string;
   dir: string;
-  meta: RunMeta;
+  /** Its run.json (record.ts). */
+  meta: RunRecord;
   actions: number;
   /** States seen per route. */
   routes: Record<string, number>;
@@ -156,8 +127,8 @@ const readApi = (snaps: ApiSnap[]): ApiCoverage | undefined => {
 const STEPS = 8;
 const FRAMES = 3;
 
-export const readRun = (dir: string, knownRoutes: readonly string[]): RunResult => {
-  const meta = JSON.parse(readFileSync(join(dir, 'run.json'), 'utf8')) as RunMeta;
+/** One run directory, read. `meta` is its run.json, when the caller has read it already. */
+export const readRun = (dir: string, knownRoutes: readonly string[], meta: RunRecord = readRunRecord(dir)): RunResult => {
   const rows: TraceRow[] = readFileSync(join(dir, 'trace.jsonl'), 'utf8')
     .split('\n')
     .filter((line) => line.trim() !== '')
