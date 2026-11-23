@@ -18,6 +18,10 @@
 // when server.env can't: a prebuilt static bundle reads only the URL and the
 // cookies. `/?world={seed}` in a flow's start and these carry the same values
 // `server.command` and `server.env` are given.
+//
+// Those cookies, and the window fields the app's mock layer keeps
+// (__mockFaults, __mockCalls, __mockPending…), are the page protocol:
+// src/page-protocol.ts, which bombadil-kit/faults and the runner import too.
 import { always, eventually } from '@antithesishq/bombadil';
 import {
   actions,
@@ -55,6 +59,7 @@ import { hasSettled, persist, spinnerStuck, spinnerTime, type Persisted, type Pe
 import { freshApiCalls, type ApiSnapshot, type ApiWindow, type CallOutcome, type MockCall, type MockEndpoint } from './api.ts';
 import { reachedMilestones, type MilestoneDef, type MilestonePredicate } from './milestones.ts';
 import { inFence } from './fence.ts';
+import { busyMs, decodeCookies, type MockWindow } from '../src/page-protocol.ts';
 
 export {
   OVERLAYS,
@@ -86,13 +91,7 @@ export {
   type Persisted,
 };
 
-type FaultWindow = Window & {
-  __mockFaults?: InjectedFault[];
-  __mockPending?: number;
-  __mockBusyMs?: number;
-  __mockBusySince?: number;
-  __fuzzWrites?: WriteWatch;
-};
+type FaultWindow = Window & MockWindow & { __fuzzWrites?: WriteWatch };
 type PersistWindow = Window & { __fuzzPersisted?: PersistStore };
 type ActionGenerator = ReturnType<typeof actions>;
 
@@ -110,11 +109,6 @@ export const persisted = (state: State, key: string, active: boolean): Persisted
 
 /** The loading indicators spinnersClear and noBlankPage look for. */
 const LOADING = '[role="status"][aria-busy="true"], [role="progressbar"]';
-
-const cookie = (doc: Document, name: string): string | null => {
-  const m = new RegExp(`(?:^|;\\s*)${name}=([^;]*)`).exec(doc.cookie);
-  return m ? decodeURIComponent(m[1]!) : null;
-};
 
 // The report lists a spec's properties from its source; when you add a
 // property factory here, add its name to PROPERTY_FACTORIES in
@@ -179,17 +173,6 @@ export const spinnersClear = ({
     return spinnerStuck(tally, deadline, share) ? `${path}: still loading, ${Math.round(tally.idle / 1000)}s of it with nothing in flight` : null;
   });
   return always(() => stuck.current === null);
-};
-
-/**
- * bombadil-kit/faults' mockBusyMs, read from the same window fields (the spec
- * bundle doesn't import app-side code). Undefined if the app doesn't count.
- * A page load restarts it: across a reload, the interval counts in full.
- */
-const busyMs = (win: FaultWindow, at: number): number | undefined => {
-  if (win.__mockPending === undefined) return undefined;
-  const open = win.__mockPending > 0 ? at - (win.__mockBusySince ?? at) : 0;
-  return (win.__mockBusyMs ?? 0) + open;
 };
 
 // v2: a tally per path is { idle, on }.
@@ -386,8 +369,9 @@ export const appRenders = ({ root = '#root', within = 10 } = {}) => {
     const doc = state.document;
     const win = state.window as RenderWindow;
     const seen = (win.__fuzzRendered ??= new Set());
-    const repo = (cookie(doc, 'fuzz_root') ?? '').replace(/\/?$/, '/');
-    const app = (cookie(doc, 'fuzz_app') ?? '').replace(/\/?$/, '/');
+    const cookies = decodeCookies(doc.cookie);
+    const repo = (cookies.root ?? '').replace(/\/?$/, '/');
+    const app = (cookies.app ?? '').replace(/\/?$/, '/');
     const relative = (file: string) => (repo !== '/' && file.startsWith(repo) ? file.slice(repo.length) : file);
     const fromStack = (stack: string) => {
       for (const m of stack.matchAll(/https?:\/\/[^/\s]+(\/[^\s?:)]+)/g)) {
@@ -660,8 +644,8 @@ export const forwardClicks = ({ label = FORWARD, exclude = 'header' } = {}) => {
 // --allow-url only polices full page loads; a client-side router changes the
 // URL without one, so without this a flow wanders off and spends its time
 // elsewhere.
-const fence = extract((state) => cookie(state.document, 'fuzz_fence'));
-const outsideFence = extract((state) => !inFence(cookie(state.document, 'fuzz_fence'), state.document.location.pathname));
+const fence = extract((state) => decodeCookies(state.document.cookie).fence ?? null);
+const outsideFence = extract((state) => !inFence(decodeCookies(state.document.cookie).fence, state.document.location.pathname));
 
 /** `generator`'s actions, or only Back while the page is outside the flow's fence. */
 export const fenced = (generator: ActionGenerator) => actions(() => (outsideFence.current ? ['Back'] : generator.generate()));

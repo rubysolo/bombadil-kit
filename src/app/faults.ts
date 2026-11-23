@@ -37,95 +37,33 @@ export type Fault =
   | { status: number; data?: unknown }
   | { status: 'FETCH_ERROR'; error: string }
   | { status: 'TIMEOUT_ERROR'; error: string };
+// Its statuses are the page protocol's FaultStatus (test/app.test.ts checks both ways).
 
-/** See InjectedFault's `kind`. */
-export type FaultKind = 'error' | 'slow' | 'hang';
+// The window fields and their types are the page protocol, shared with the
+// spec: see src/page-protocol.ts.
+// Imported, then exported, like the spec does (one rule for every bundler).
+import {
+  busyMs,
+  openRequest,
+  COOKIES,
+  decodeCookies,
+  type CallOutcome,
+  type FaultKind,
+  type FaultStatus,
+  type InjectedFault,
+  type MockCall,
+  type MockEndpoint,
+  type MockWindow,
+  type PageCookies,
+} from '../page-protocol.ts';
 
-export interface InjectedFault {
-  /** The HTTP method, or whatever the transport has instead (an RPC mock might log `'RPC'`). */
-  method: string;
-  /** The endpoint: a path, or e.g. `Controller.method`. */
-  path: string;
-  /** What the request failed with; a status of the mock layer's own for faults that aren't HTTP. */
-  status: Fault['status'] | (string & {});
-  /**
-   * `Date.now()` when the fault was injected. For `slow` and `hang`: when the
-   * request started. For `'error'`: when the failure reached the app if the
-   * layer knows it, else when the call started (most layers log it there,
-   * before their response delay); then set `deliveredAt`.
-   */
-  at: number;
-  /**
-   * For `'error'`: `Date.now()` when the failure reached the app, if the layer
-   * logged it earlier (at the call's start, before a delay), or `at` when it
-   * knows the two are the same. failedWritesShown counts `within` from it and
-   * drops a write the walker left before it (no `leaveGrace`), and
-   * consoleQuietUnlessFaulted counts its `grace` from it, instead of `at`. It
-   * may be in the future when logged.
-   */
-  deliveredAt?: number;
-  /**
-   * Whether the request changes data. Overrides the `method !== 'GET'` guess;
-   * transports without HTTP verbs (RPC, Salesforce remoting, GraphQL) set it.
-   */
-  write?: boolean;
-  /**
-   * `'error'` (the default when absent): the request failed. `'slow'`: it
-   * answered, `delayMs` late. `'hang'`: it never answers.
-   * failedWritesShown only counts errors; consoleQuietUnlessFaulted excuses
-   * a hang like an error, from `at`.
-   */
-  kind?: FaultKind;
-  /** For `slow`: how late the answer came, in ms. */
-  delayMs?: number;
-}
-
-/** How a mock call ended; see MockCall. */
-export type CallOutcome = 'ok' | 'error' | 'slow' | 'hang';
-
-/**
- * One call the mock API answered (or didn't), for the report's API coverage.
- * The mock layer pushes these onto window.__mockCalls; createFaultInjector
- * does it for every request it sees, keyed `METHOD /path`.
- */
-export interface MockCall {
-  /** What identifies the endpoint: `GET /orders/:id`, `OrderController.getOrder`. */
-  key: string;
-  /** The named response the mock answered with (`empty`, `locked`), if it has them. */
-  variant?: string;
-  outcome: CallOutcome;
-  /** `Date.now()` when the call was made. */
-  at: number;
-  /**
-   * Optional. Counts up by at least 1 per call, across the page. With it, a
-   * mock layer may cap its log (drop the oldest); without it, the log must
-   * only grow, or apiCalls misses the calls past the cap.
-   */
-  seq?: number;
-}
-
-/** An endpoint the mock API has, so the report can show the ones never called. */
-export interface MockEndpoint {
-  key: string;
-  /** Its named responses; `[]` if it has one. */
-  variants: string[];
-}
+export type { CallOutcome, FaultKind, FaultStatus, InjectedFault, MockCall, MockEndpoint, MockWindow, PageCookies };
+/** The runner's cookies (fuzz_seed, fuzz_faults, fuzz_ref_date…), for a mock that reads them: `decodeCookies(document.cookie)`. */
+export { COOKIES, decodeCookies };
 
 declare global {
-  interface Window {
-    /** Every fault the injector has answered with since the page loaded. */
-    __mockFaults?: InjectedFault[];
-    /** Every call the mock API saw since the page loaded. */
-    __mockCalls?: MockCall[];
-    /** The mock API's endpoints. */
-    __mockEndpoints?: MockEndpoint[];
-    /** Mocked requests in flight (startMockRequest). */
-    __mockPending?: number;
-    /** ms any mocked request was in flight, closed spans only; see mockBusyMs. */
-    __mockBusyMs?: number;
-    /** When __mockPending last went from 0 to 1. */
-    __mockBusySince?: number;
-  }
+  // The mock layer's fields: __mockFaults, __mockCalls, __mockEndpoints, __mockPending, __mockBusyMs, __mockBusySince.
+  interface Window extends MockWindow {}
 }
 
 /**
@@ -136,26 +74,12 @@ declare global {
  * with nothing in flight. withFaults does this for RTK Query; a mock layer of
  * the app's own calls it per request.
  */
-export const startMockRequest = (clock: () => number = Date.now): (() => void) => {
-  if (typeof window === 'undefined') return () => {};
-  const pending = window.__mockPending ?? 0;
-  if (pending === 0) window.__mockBusySince = clock();
-  window.__mockPending = pending + 1;
-  let done = false;
-  return () => {
-    if (done) return;
-    done = true;
-    window.__mockPending = Math.max(0, (window.__mockPending ?? 1) - 1);
-    if (window.__mockPending === 0) window.__mockBusyMs = (window.__mockBusyMs ?? 0) + clock() - (window.__mockBusySince ?? clock());
-  };
-};
+export const startMockRequest = (clock: () => number = Date.now): (() => void) =>
+  typeof window === 'undefined' ? () => {} : openRequest(window, clock);
 
-/** ms any mocked request has been in flight since the page loaded, overlaps counted once (spinnersClear reads the same fields). */
-export const mockBusyMs = (clock: () => number = Date.now): number => {
-  if (typeof window === 'undefined') return 0;
-  const open = (window.__mockPending ?? 0) > 0 ? clock() - (window.__mockBusySince ?? clock()) : 0;
-  return (window.__mockBusyMs ?? 0) + open;
-};
+/** ms any mocked request has been in flight since the page loaded, overlaps counted once (spinnersClear reads the same clock). */
+export const mockBusyMs = (clock: () => number = Date.now): number =>
+  typeof window === 'undefined' ? 0 : (busyMs(window, clock()) ?? 0);
 
 /** Reads VITE_MOCK_FAULT_RATE and VITE_MOCK_FAULT_SEED; pass `import.meta.env`. */
 export const parseFaultConfig = (env: Record<string, unknown>): FaultConfig | undefined => {

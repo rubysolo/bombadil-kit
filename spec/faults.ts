@@ -1,12 +1,12 @@
 // The pure half of the properties that read window.__mockFaults: no Bombadil
 // imports, so node can test it. spec/index.ts calls these inside `extract`.
 //
-// The shape is bombadil-kit/faults' InjectedFault; a mock layer of the app's
-// own can push the same entries. `import type` is erased, so the bundle
-// Bombadil runs in the page doesn't pull in the app-side module.
-import type { InjectedFault } from '../src/app/faults.ts';
+// The shape is the page protocol's InjectedFault (src/page-protocol.ts), which
+// bombadil-kit/faults logs; a mock layer of the app's own can push the same
+// entries.
+import type { FaultKind, InjectedFault } from '../src/page-protocol.ts';
 
-export type { FaultKind, InjectedFault } from '../src/app/faults.ts';
+export type { FaultKind, InjectedFault };
 
 /** Whether the faulted request changes data: `write` if the mock layer said, else anything but GET. */
 export const isWriteFault = (f: InjectedFault) => f.write ?? f.method !== 'GET';
