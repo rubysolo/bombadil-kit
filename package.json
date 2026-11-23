@@ -1,6 +1,6 @@
 {
   "name": "bombadil-kit",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Bombadil fuzzing toolkit: shared properties, flow runner, diff-aware PR runs, and a findings report.",
   "license": "MIT",
   "type": "module",
