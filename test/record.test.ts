@@ -92,6 +92,8 @@ test('record: parsing refuses what the kit could not read, naming the file and t
   const dir = tmp();
   writeFileSync(join(dir, 'run.json'), JSON.stringify({ ...good, exit_code: null }));
   assert.throws(() => readRunRecord(dir), new RegExp(`${dir}/run.json: exit_code`));
+  const empty = tmp();
+  assert.throws(() => readRunRecord(empty), new RegExp(`^Error: no run.json in ${empty}$`));
 });
 
 test('record: a run from before the newer fields still parses', () => {

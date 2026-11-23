@@ -1,4 +1,4 @@
-import { readFileSync, writeFileSync } from 'node:fs';
+import { existsSync, readFileSync, writeFileSync } from 'node:fs';
 import { isAbsolute, join, relative } from 'node:path';
 
 /**
@@ -188,6 +188,7 @@ export const parseRun = (json: unknown, where = 'run.json'): RunRecord => {
 /** The record in run directory `dir`. */
 export const readRunRecord = (dir: string): RunRecord => {
   const file = join(dir, 'run.json');
+  if (!existsSync(file)) throw new Error(`no run.json in ${dir}`);
   return parseRun(JSON.parse(readFileSync(file, 'utf8')), file);
 };
 

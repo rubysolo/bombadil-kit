@@ -307,7 +307,6 @@ const sweep = async (loaded: Loaded, o: RunOptions, procs: Processes, runs: Swee
  */
 const replay = (loaded: Loaded, o: RunOptions): RunOptions => {
   const dir = resolve(loaded.root, o.reproduce!);
-  if (!existsSync(join(dir, 'run.json'))) throw new Error(`no run.json in ${dir}`);
   const meta = readRunRecord(dir);
   const trace = join(dir, 'trace.jsonl');
   if (!existsSync(trace)) throw new Error(`${dir} has no trace.jsonl to replay`);

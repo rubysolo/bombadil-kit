@@ -36,9 +36,11 @@ test('cli: an unknown command prints the usage and exits 2; --help exits 0', () 
   assert.match(help.stderr, /bombadil-kit run/);
 });
 
-test('cli: another command that fails exits 1', () => {
+// `report --fail-on new` exits 1 when the gate trips (templates/*/fuzz*): a
+// report that failed must not say 1.
+test('cli: another command that fails exits 2, not 1', () => {
   // No runs yet: report has nothing to fold.
-  const r = kit(repo(), 'report');
+  const r = kit(repo(), 'report', '--fail-on', 'new');
   assert.match(r.stderr, /no runs under/);
-  assert.equal(r.status, 1);
+  assert.equal(r.status, 2);
 });

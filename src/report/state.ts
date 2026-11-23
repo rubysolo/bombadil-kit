@@ -1,3 +1,4 @@
+import type { RunTarget } from './record.ts';
 import type { ApiCoverage, RunFinding, RunResult } from './runs.ts';
 
 /**
@@ -77,7 +78,7 @@ export interface RunInfo {
   /** The run it replayed, for a `--reproduce` run (which belongs to no sweep's runs). */
   replay_of?: string;
   spec: string;
-  target: Record<string, unknown>;
+  target: RunTarget;
 }
 
 export interface State {

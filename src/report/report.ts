@@ -1,3 +1,4 @@
+import type { RunTarget } from './record.ts';
 import type { ProjectInfo } from './project.ts';
 import type { Snapshot } from './findings.ts';
 import type { ApiCoverage, Step } from './runs.ts';
@@ -29,7 +30,7 @@ export interface ReportFinding {
   seen_in: number;
   of_sweeps: number;
   runs_hit: number;
-  target: Record<string, unknown>;
+  target: RunTarget;
   repro: { seed: number; run: string; command: string; steps: Step[]; /** How to replay the run's trace; absent from a report built before it. */ replay?: string };
   /** inspect: Bombadil's viewer on the whole run (every state), from the repo root. */
   evidence: { frames: string[]; run_dir: string; inspect: string };
@@ -67,7 +68,7 @@ export interface ReportFlowMilestones {
 export interface ReportProject {
   name: string;
   spec: string;
-  target: Record<string, unknown>;
+  target: RunTarget;
   last_sweep: number;
   actions: number;
   properties: { name: string; open: string[] }[];
