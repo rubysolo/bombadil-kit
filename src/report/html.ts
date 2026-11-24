@@ -134,9 +134,9 @@ pre.json{white-space:pre;overflow-x:auto}
 .kv{display:flex;flex-direction:column;gap:2px;padding:6px 0;border-bottom:1px solid var(--line2)}
 .kv:last-child{border-bottom:0}
 .kv code{color:var(--t);white-space:pre-wrap;word-break:break-word;font:inherit}
-.cmd{display:block;white-space:nowrap;overflow-x:auto;padding-bottom:2px}
+.cmd{display:block;white-space:pre-wrap;overflow-wrap:anywhere;padding-left:2ch;text-indent:-2ch}
 .cmdline{display:flex;align-items:flex-start;gap:8px;min-width:0}.cmdline .cmd{flex:1;min-width:0}
-td .cmdline{flex-direction:row-reverse;justify-content:flex-end}td .cmdline .cmd{max-width:min(420px,32vw)}
+td .cmdline{min-width:320px;white-space:normal}
 button{font:inherit;color:inherit}
 .copy{flex:none;cursor:pointer;background:transparent;border:1px solid var(--line);color:var(--dim);padding:0 7px;font:700 11px/18px Rajdhani,"Arial Narrow",sans-serif;letter-spacing:.16em}
 .copy:hover{color:var(--c);border-color:var(--c)}.copy.done{color:var(--g);border-color:var(--g)}
@@ -323,7 +323,7 @@ function project(name, tab) {
     body = '<div class="chart">' + p.history.map((h, i) =>
       '<div class="' + (i === p.history.length - 1 ? 'last' : '') + '"><span class="w">' + h.findings + '</span><i style="height:' + Math.max(2, (120 * h.findings) / max) + 'px"></i><span>#' + h.sweep + '</span></div>').join('') + '</div>' +
       '<div class="scroll"><table><thead><tr><th>RUN (LATEST SWEEP)</th><th>SEED</th><th>ACTIONS</th><th>EXIT</th><th>RERUN</th></tr></thead><tbody>' +
-      p.runs.map((r) => '<tr><td>' + esc(r.id) + '</td><td>' + r.seed + '</td><td>' + r.actions.toLocaleString('en-US') + '</td><td class="' + (r.exit_code ? 'm' : 'g') + '">' + r.exit_code + '</td><td class="dim">' + (r.replay_of ? esc('replay of ' + r.replay_of) : r.command ? '<div class="cmdline"><span class="cmd">' + esc(r.command) + '</span>' + copyBtn(r.command) + '</div>' : '') + '</td></tr>').join('') +
+      p.runs.map((r) => '<tr><td>' + esc(r.id) + '</td><td>' + r.seed + '</td><td>' + r.actions.toLocaleString('en-US') + '</td><td class="' + (r.exit_code ? 'm' : 'g') + '">' + r.exit_code + '</td><td class="dim">' + (r.replay_of ? esc('replay of ' + r.replay_of) : r.command ? '<div class="cmdline"><span class="cmd"><span class="g">$</span> ' + esc(r.command) + '</span>' + copyBtn(r.command) + '</div>' : '') + '</td></tr>').join('') +
       '</tbody></table></div>';
   }
   const last = p.runs.filter((r) => !r.replay_of).at(-1);
