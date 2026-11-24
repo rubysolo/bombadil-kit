@@ -195,3 +195,17 @@ test('project rerun commands have copy buttons; replays do not', () => {
   const sweeps = rendered(withRuns, '#/p/web/sweeps');
   assert.equal(sweeps.match(/data-copy=/g)?.length, 2, 'the sidebar and the sweep run, not the replay');
 });
+
+test('every command on every page is the one command-line component: prompt, wrapping text, copy button', () => {
+  const r = withFinding();
+  const runs = [{ id: 'web/r1', seed: 1, actions: 5, exit_code: 0, started_at: 't', command: 'npx bombadil-kit run --seed 1' }];
+  const all = { ...r, projects: [{ ...r.projects[0]!, runs }] } as Report;
+  for (const hash of ['', '#/p/web', '#/p/web/sweeps', '#/f/F-1', '#/f/F-1/json']) {
+    const page = rendered(all, hash);
+    const copies = page.match(/data-copy="/g)?.length ?? 0;
+    const components = page.match(/<div class="cmdline"[^>]*><code class="cmd[^"]*"><span class="g">\$<\/span> [^<]*(?:<span class="dim">[^<]*<\/span>)?<\/code><button type="button" class="copy" data-copy="/g)?.length ?? 0;
+    assert.ok(copies > 0, hash + ' shows a command');
+    assert.equal(components, copies, hash);
+    assert.equal(page.match(/class="g">\$</g)?.length, copies, hash + ': no command without its copy button');
+  }
+});

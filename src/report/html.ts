@@ -186,10 +186,11 @@ const sweepsOf = (f) => (byProject(f.project)?.history ?? []).slice(-6);
 const squares = (f) => sweepsOf(f).map((h) => '<span class="sq' + (f.sweeps.includes(h.sweep) ? ' on' : '') + '" title="sweep ' + h.sweep + '"></span>').join('');
 
 // A shell command with a copy button; data-copy holds the exact text, the page shows it after "$ ".
-const copyBtn = (text) => '<button type="button" class="copy" data-copy="' + esc(text) + '" title="Copy to clipboard">COPY</button>';
+// Every command the page shows goes through here.
 const cmd = (text, opts = {}) =>
   '<div class="cmdline"' + (opts.style ? ' style="' + opts.style + '"' : '') + '><code class="cmd' + (opts.dim ? ' dim' : '') + '"><span class="g">$</span> ' + esc(text) +
-  (opts.note ? ' <span class="dim">' + esc(opts.note) + '</span>' : '') + '</code>' + copyBtn(text) + '</div>';
+  (opts.note ? ' <span class="dim">' + esc(opts.note) + '</span>' : '') + '</code>' +
+  '<button type="button" class="copy" data-copy="' + esc(text) + '" title="Copy to clipboard">COPY</button></div>';
 
 const header = (crumbs, right) =>
   '<header class="bar"><div class="crumbs"><span class="led' + (R.summary.new + R.summary.open ? ' bad' : '') + '"></span>' + crumbs + '</div>' +
@@ -323,7 +324,7 @@ function project(name, tab) {
     body = '<div class="chart">' + p.history.map((h, i) =>
       '<div class="' + (i === p.history.length - 1 ? 'last' : '') + '"><span class="w">' + h.findings + '</span><i style="height:' + Math.max(2, (120 * h.findings) / max) + 'px"></i><span>#' + h.sweep + '</span></div>').join('') + '</div>' +
       '<div class="scroll"><table><thead><tr><th>RUN (LATEST SWEEP)</th><th>SEED</th><th>ACTIONS</th><th>EXIT</th><th>RERUN</th></tr></thead><tbody>' +
-      p.runs.map((r) => '<tr><td>' + esc(r.id) + '</td><td>' + r.seed + '</td><td>' + r.actions.toLocaleString('en-US') + '</td><td class="' + (r.exit_code ? 'm' : 'g') + '">' + r.exit_code + '</td><td class="dim">' + (r.replay_of ? esc('replay of ' + r.replay_of) : r.command ? '<div class="cmdline"><span class="cmd"><span class="g">$</span> ' + esc(r.command) + '</span>' + copyBtn(r.command) + '</div>' : '') + '</td></tr>').join('') +
+      p.runs.map((r) => '<tr><td>' + esc(r.id) + '</td><td>' + r.seed + '</td><td>' + r.actions.toLocaleString('en-US') + '</td><td class="' + (r.exit_code ? 'm' : 'g') + '">' + r.exit_code + '</td><td class="dim">' + (r.replay_of ? esc('replay of ' + r.replay_of) : r.command ? cmd(r.command) : '') + '</td></tr>').join('') +
       '</tbody></table></div>';
   }
   const last = p.runs.filter((r) => !r.replay_of).at(-1);
