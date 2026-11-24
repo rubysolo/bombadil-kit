@@ -96,6 +96,19 @@ type PersistWindow = Window & { __fuzzPersisted?: PersistStore };
 type ActionGenerator = ReturnType<typeof actions>;
 
 /**
+ * Names an extractor's snapshot. Bombadil's bundler names a top-level
+ * `const x = extract(...)` after `x` (0.8 on: only top-level ones), so every
+ * extractor built inside a function here says its name: the report reads
+ * `rendered`, `api` and `milestones` by name, and a finding lists its
+ * snapshots under theirs. `extract` is typed as a plain Cell; what it returns
+ * is an ExtractorCell, which has `named`. test/spec-names.test.ts holds the rule.
+ */
+const named = <C>(cell: C, name: string): C => {
+  (cell as C & { named(name: string): unknown }).named(name);
+  return cell;
+};
+
+/**
  * For use inside `extract`: how long `active` has held without a break on the
  * current history entry, in milliseconds and captured states. `key` names the
  * timer; give each condition its own. The timers live on the page's `window`,
@@ -118,7 +131,7 @@ const LOADING = '[role="status"][aria-busy="true"], [role="progressbar"]';
 
 /** No render throws far enough to show the error boundary's fallback. */
 export const errorBoundaryNeverShown = (selector = '[data-testid="error-boundary-fallback"]') => {
-  const shown = extract((state) => state.document.querySelector(selector) !== null);
+  const shown = named(extract((state) => state.document.querySelector(selector) !== null), 'shown');
   return always(() => !shown.current);
 };
 
@@ -156,7 +169,7 @@ export const spinnersClear = ({
   exclude,
   key = byPath,
 }: { selector?: string; within?: number; share?: number; exclude?: string; key?: PageKey } = {}) => {
-  const stuck = extract((state) => {
+  const stuck = named(extract((state) => {
     const win = state.window as FaultWindow & SpinnerWindow;
     const at = Date.now();
     const path = key(win.location);
@@ -171,7 +184,7 @@ export const spinnersClear = ({
     store.save();
     // A string, so the report names the path and tells stuck paths apart.
     return spinnerStuck(tally, deadline, share) ? `${path}: still loading, ${Math.round(tally.idle / 1000)}s of it with nothing in flight` : null;
-  });
+  }), 'stuck');
   return always(() => stuck.current === null);
 };
 
@@ -229,20 +242,20 @@ export const LEAKED = /\bundefined\b|\bNaN\b|\[object Object\]|Invalid Date|\bnu
 
 /** No `undefined`, `NaN`, `[object Object]`, `Invalid Date`, `null` in the visible text. */
 export const noLeakedText = (pattern: RegExp = LEAKED) => {
-  const leaked = extract((state) => {
+  const leaked = named(extract((state) => {
     const text = state.document.body?.innerText ?? '';
     const match = pattern.exec(text);
     return match ? text.slice(Math.max(0, match.index - 40), match.index + 40) : null;
-  });
+  }), 'leaked');
   return always(() => leaked.current === null);
 };
 
 /** The page never scrolls sideways (more than `tolerance` px). */
 export const noSidewaysScroll = (tolerance = 1) => {
-  const overflow = extract((state) => {
+  const overflow = named(extract((state) => {
     const root = state.document.documentElement;
     return root ? root.scrollWidth - state.window.innerWidth : 0;
-  });
+  }), 'overflow');
   return always(() => overflow.current <= tolerance);
 };
 
@@ -287,7 +300,7 @@ export const failedWritesShown = ({
   leaveGrace = 1000,
   request = requestPattern,
 }: FailedWritesOptions = {}) => {
-  const unannounced = extract((state) => {
+  const unannounced = named(extract((state) => {
     const win = state.window as FaultWindow;
     const alertShown = [...state.document.querySelectorAll(errorSelector)].some(
       (el) => isVisible(el) && (el.textContent ?? '').trim() !== '',
@@ -299,7 +312,7 @@ export const failedWritesShown = ({
     // the first string, so one endpoint's failures are one finding whatever
     // the status or record. The full line is the evidence.
     return fault ? { request: request(fault.method, fault.path, (win.__mockEndpoints ?? []).map((e) => e.key)), fault: faultLine(fault) } : null;
-  });
+  }), 'unannounced');
   return always(() => unannounced.current === null);
 };
 
@@ -325,9 +338,9 @@ export const failedWritesShown = ({
 export const consoleQuietUnlessFaulted = (options: number | ConsoleExcuse = 5000, hangGrace?: number) => {
   const excuse: ConsoleExcuse =
     typeof options === 'number' ? { grace: options, ...(hangGrace === undefined ? {} : { hangGrace }) } : options;
-  const unexcused = extract((state) =>
+  const unexcused = named(extract((state) =>
     unexcusedConsoleErrors(state.console, (state.window as FaultWindow).__mockFaults ?? [], Date.now(), excuse),
-  );
+  ), 'unexcused');
   return always(() => unexcused.current.length === 0);
 };
 
@@ -345,7 +358,7 @@ export const consoleQuietUnlessFaulted = (options: number | ConsoleExcuse = 5000
  * that takes clicks.
  */
 export const nothingUnder = ({ selector = 'header img', container = 'header', exclude = OVERLAYS } = {}) => {
-  const over = extract((state) => textUnder(state.document, selector, container, exclude));
+  const over = named(extract((state) => textUnder(state.document, selector, container, exclude)), 'over');
   return always(() => over.current === null);
 };
 
@@ -369,7 +382,7 @@ type RenderWindow = Window & { __fuzzRendered?: Set<string> };
  * `_debugStack` path is read from Vite's dev URLs (`/src/…`, `/@fs/…`).
  */
 export const appRenders = ({ root = '#root', within = 10 } = {}) => {
-  const rendered = extract((state) => {
+  const rendered = named(extract((state) => {
     const doc = state.document;
     const win = state.window as RenderWindow;
     const seen = (win.__fuzzRendered ??= new Set());
@@ -402,7 +415,7 @@ export const appRenders = ({ root = '#root', within = 10 } = {}) => {
       if (fiber.sibling) stack.push(fiber.sibling);
     }
     return { fresh, total: seen.size };
-  });
+  }), 'rendered');
   return always(eventually(() => rendered.current.total > 0).within(within, 'seconds'));
 };
 
@@ -436,7 +449,7 @@ export const noBlankPage = ({
   minMs = 250,
 }:{ chrome?: string; minChars?: number; loading?: string; filled?: string; minStates?: number; minMs?: number } = {}) => {
   const key = `noBlankPage#${blankPages++}`;
-  const blank = extract((state) => {
+  const blank = named(extract((state) => {
     const doc = state.document;
     const { body } = doc;
     const empty =
@@ -445,7 +458,7 @@ export const noBlankPage = ({
         !visibleOutside(doc.querySelectorAll(loading)) &&
         !visibleOutside(doc.querySelectorAll(filled), chrome));
     return persisted(state, key, empty);
-  });
+  }), 'blank');
   return always(() => !hasSettled(blank.current, { minStates, minMs }));
 };
 
@@ -465,12 +478,8 @@ export const noBlankPage = ({
  * needs `seq` on each (MockCall); without it the log must only grow.
  */
 export const apiCalls = () => {
-  const api = extract((state) => freshApiCalls(state.window as ApiWindow));
-  // The report reads the snapshot by this name. The bundler names an
-  // extractor after its variable; say it outright, in case it can't see this one.
-  const named = api as typeof api & { named?: (name: string) => unknown };
-  if (typeof named.named === 'function') named.named('api');
-  return api;
+  // The report reads the snapshot by this name.
+  return named(extract((state) => freshApiCalls(state.window as ApiWindow)), 'api');
 };
 
 /**
@@ -493,11 +502,8 @@ export const apiCalls = () => {
  *   saved: { holds: (doc) => !!doc.querySelector('.saved'), after: 'AccountController.save' },
  */
 export const milestones = (defs: Record<string, MilestoneDef>) => {
-  const reached = extract((state) => reachedMilestones(defs, state.document, state.window));
-  // The report reads the snapshot by this name (see apiCalls).
-  const named = reached as typeof reached & { named?: (name: string) => unknown };
-  if (typeof named.named === 'function') named.named('milestones');
-  return reached;
+  // The report reads the snapshot by this name.
+  return named(extract((state) => reachedMilestones(defs, state.document, state.window)), 'milestones');
 };
 
 // ------------------------------------------------------------------- actions
@@ -620,7 +626,7 @@ const targets = (state: { document: Document; window: Window }, selector: string
  * and the flow lands outside its fence with nothing left to do.
  */
 export const pageClicks = ({ exclude = 'header' } = {}) => {
-  const found = extract((state) => targets(state, CLICKABLE, (el) => !exclude || !el.closest(exclude)));
+  const found = named(extract((state) => targets(state, CLICKABLE, (el) => !exclude || !el.closest(exclude))), 'found');
   return actions(() => found.current.map(({ fingerprint, point }) => ({ Click: { fingerprint, point } })));
 };
 
@@ -634,12 +640,12 @@ export const FORWARD =
  * deep then needs five lucky draws in a row. Weight this to get through.
  */
 export const forwardClicks = ({ label = FORWARD, exclude = 'header' } = {}) => {
-  const found = extract((state) =>
+  const found = named(extract((state) =>
     targets(state, 'button:not(:disabled), a[href], [role="button"]', (el) => {
       const text = (el.textContent ?? el.getAttribute('aria-label') ?? '').trim();
       return label.test(text) && (!exclude || !el.closest(exclude));
     }),
-  );
+  ), 'found');
   return actions(() => found.current.map(({ fingerprint, point }) => ({ Click: { fingerprint, point } })));
 };
 

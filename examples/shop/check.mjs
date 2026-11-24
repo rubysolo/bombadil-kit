@@ -10,6 +10,7 @@
 //
 // The clean sweep also prints each flow's expected milestones it missed (a
 // flow that reached its pages without finishing there); that warns, never fails.
+// It fails if a flow has no rendered-file coverage (coverage.json).
 //
 // TIME (default 30s, or the plant's `time`), SEED (default 1) and PORT
 // override the sweep's. A plant that needs the walker to dwell somewhere (a
@@ -56,6 +57,13 @@ const sweep = (plant) => {
   if (!p) {
     if (rc !== 0) problems.push(`exit ${rc}, want 0`);
     if (seen.length) problems.push(`${seen.length} finding(s) on the correct app: ${fired.join(', ')}`);
+    // Every flow rendered some source files: the `rendered` snapshot reached
+    // the report by name, so `affected` has coverage to pick flows from.
+    // Coverage adds up across sweeps; a fresh checkout (CI) sees this one's.
+    const coverage = JSON.parse(readFileSync(join(here, 'tmp/bombadil/report/coverage.json'), 'utf8'));
+    const flows = JSON.parse(readFileSync(join(here, 'bombadil/flows.json'), 'utf8'));
+    const bare = flows.map((f) => f.name).filter((f) => !coverage.projects.shop?.flows?.[f]?.length);
+    if (bare.length) problems.push(`no rendered coverage for ${bare.join(', ')}`);
   } else if (p.known) {
     // A kit gap, written down: reported, never failed. Whether it's caught can
     // depend on where the walker goes, so neither outcome fails the check.

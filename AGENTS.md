@@ -41,6 +41,11 @@ Installed as a dependency, this file and the prompts are at
   both import a name and `export { name } from` the same module: the bundle
   declares it twice and the spec won't load ("Identifier 'name' has already
   been declared"). Import it, then `export { name }`.
+- Bombadil names an extractor's snapshot after its binding only for a
+  top-level `const x = extract(...)` (0.8 on). One built inside a function is
+  unnamed in traces and the report unless it says its name: the kit's go
+  through `named()` in `spec/index.ts` (test/spec-names.test.ts holds the
+  rule). In an app's `bombadil/*.ts`, declare extractors at the top level.
 
 ## Package layout
 
