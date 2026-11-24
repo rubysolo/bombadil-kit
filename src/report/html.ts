@@ -25,6 +25,7 @@ ${CSS}</style>
 </head>
 <body>
 <div id="app"></div>
+<dialog id="lightbox" aria-label="Evidence frame"><figure><img alt=""><figcaption><span class="cap"></span><span class="nav"><button type="button" data-step="-1" aria-label="Previous frame">◂</button><button type="button" data-step="1" aria-label="Next frame">▸</button><button type="button" data-close aria-label="Close">✕</button></span></figcaption></figure></dialog>
 <script type="application/json" id="report">${embed(report)}</script>
 <script>const TITLE = ${JSON.stringify(title.toUpperCase())};
 ${CLIENT}</script>
@@ -126,13 +127,27 @@ pre{margin:0;white-space:pre-wrap;word-break:break-word;font:12px/1.6 inherit;co
 pre.json{white-space:pre;overflow-x:auto}
 .frames{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:14px}
 .frames figure{margin:0;display:flex;flex-direction:column;gap:6px}
-.frames img{width:100%;border:1px solid var(--line);background:#000}
+.frames img{display:block;width:100%;border:1px solid var(--line);background:#000}
+.frames .zoom{display:block;cursor:zoom-in}.frames .zoom:hover img{border-color:var(--c);box-shadow:0 0 14px rgba(0,229,255,.45)}
 .frames figure:last-child img{border-color:var(--m);box-shadow:0 0 18px rgba(255,43,214,.4)}
 .frames figcaption{color:var(--dim);font-size:12px}
 .kv{display:flex;flex-direction:column;gap:2px;padding:6px 0;border-bottom:1px solid var(--line2)}
 .kv:last-child{border-bottom:0}
 .kv code{color:var(--t);white-space:pre-wrap;word-break:break-word;font:inherit}
 .cmd{display:block;white-space:nowrap;overflow-x:auto;padding-bottom:2px}
+.cmdline{display:flex;align-items:flex-start;gap:8px;min-width:0}.cmdline .cmd{flex:1;min-width:0}
+td .cmdline{flex-direction:row-reverse;justify-content:flex-end}td .cmdline .cmd{max-width:min(420px,32vw)}
+button{font:inherit;color:inherit}
+.copy{flex:none;cursor:pointer;background:transparent;border:1px solid var(--line);color:var(--dim);padding:0 7px;font:700 11px/18px Rajdhani,"Arial Narrow",sans-serif;letter-spacing:.16em}
+.copy:hover{color:var(--c);border-color:var(--c)}.copy.done{color:var(--g);border-color:var(--g)}
+#lightbox{padding:0;border:1px solid var(--c);background:var(--bg);color:var(--t);max-width:96vw;max-height:96vh;box-shadow:0 0 40px rgba(0,229,255,.35)}
+#lightbox::backdrop{background:rgba(2,6,11,.88)}
+#lightbox figure{margin:0;display:flex;flex-direction:column}
+#lightbox img{display:block;max-width:96vw;max-height:calc(96vh - 40px);object-fit:contain;background:#000}
+#lightbox figcaption{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:6px 10px;border-top:1px solid var(--line);color:var(--dim);font-size:12px}
+#lightbox .cap{flex:1;width:0;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+#lightbox .nav{display:flex;gap:6px}#lightbox .nav button{cursor:pointer;background:transparent;border:1px solid var(--line);color:var(--c);padding:0 10px;line-height:22px}
+#lightbox .nav button:hover{border-color:var(--c)}#lightbox .nav button:disabled{opacity:.3;cursor:default}
 .foot{display:flex;flex-wrap:wrap;justify-content:space-between;gap:12px;color:var(--dim);font-size:12px}
 @media (max-width:700px){.wrap{padding:16px}.list .case{grid-template-columns:1fr}.banner h1{font-size:30px}}
 `;
@@ -169,6 +184,12 @@ const routeCov = (p) => {
 const unlisted = (n) => (n ? n + ' not in the route list' : '');
 const sweepsOf = (f) => (byProject(f.project)?.history ?? []).slice(-6);
 const squares = (f) => sweepsOf(f).map((h) => '<span class="sq' + (f.sweeps.includes(h.sweep) ? ' on' : '') + '" title="sweep ' + h.sweep + '"></span>').join('');
+
+// A shell command with a copy button; data-copy holds the exact text, the page shows it after "$ ".
+const copyBtn = (text) => '<button type="button" class="copy" data-copy="' + esc(text) + '" title="Copy to clipboard">COPY</button>';
+const cmd = (text, opts = {}) =>
+  '<div class="cmdline"' + (opts.style ? ' style="' + opts.style + '"' : '') + '><code class="cmd' + (opts.dim ? ' dim' : '') + '"><span class="g">$</span> ' + esc(text) +
+  (opts.note ? ' <span class="dim">' + esc(opts.note) + '</span>' : '') + '</code>' + copyBtn(text) + '</div>';
 
 const header = (crumbs, right) =>
   '<header class="bar"><div class="crumbs"><span class="led' + (R.summary.new + R.summary.open ? ' bad' : '') + '"></span>' + crumbs + '</div>' +
@@ -226,7 +247,7 @@ function repo() {
     lane('quiet', 'Quiet', 'not seen lately', by('quiet')) +
     lane('closed', 'Closed', '3 clean sweeps', by('closed').slice(0, 12)) +
     '</section>' +
-    '<footer class="foot"><span><span class="g">$</span> jq -c \'select(.status=="open" or .status=="new")\' findings.ndjson</span><span>report.json · findings.ndjson · state.json · generated ' + esc(when(R.generated_at)) + '</span></footer>';
+    '<footer class="foot">' + cmd('jq -c \'select(.status=="open" or .status=="new")\' findings.ndjson') + '<span>report.json · findings.ndjson · state.json · generated ' + esc(when(R.generated_at)) + '</span></footer>';
 }
 
 // The mock API endpoints a project's flows called (report.json's api), or nothing without that data.
@@ -302,7 +323,7 @@ function project(name, tab) {
     body = '<div class="chart">' + p.history.map((h, i) =>
       '<div class="' + (i === p.history.length - 1 ? 'last' : '') + '"><span class="w">' + h.findings + '</span><i style="height:' + Math.max(2, (120 * h.findings) / max) + 'px"></i><span>#' + h.sweep + '</span></div>').join('') + '</div>' +
       '<div class="scroll"><table><thead><tr><th>RUN (LATEST SWEEP)</th><th>SEED</th><th>ACTIONS</th><th>EXIT</th><th>RERUN</th></tr></thead><tbody>' +
-      p.runs.map((r) => '<tr><td>' + esc(r.id) + '</td><td>' + r.seed + '</td><td>' + r.actions.toLocaleString('en-US') + '</td><td class="' + (r.exit_code ? 'm' : 'g') + '">' + r.exit_code + '</td><td class="dim">' + esc(r.replay_of ? 'replay of ' + r.replay_of : r.command) + '</td></tr>').join('') +
+      p.runs.map((r) => '<tr><td>' + esc(r.id) + '</td><td>' + r.seed + '</td><td>' + r.actions.toLocaleString('en-US') + '</td><td class="' + (r.exit_code ? 'm' : 'g') + '">' + r.exit_code + '</td><td class="dim">' + (r.replay_of ? esc('replay of ' + r.replay_of) : r.command ? '<div class="cmdline"><span class="cmd">' + esc(r.command) + '</span>' + copyBtn(r.command) + '</div>' : '') + '</td></tr>').join('') +
       '</tbody></table></div>';
   }
   const last = p.runs.filter((r) => !r.replay_of).at(-1);
@@ -310,9 +331,11 @@ function project(name, tab) {
     '<div class="cols"><aside class="side"><section class="panel"><div class="head"><h2>Properties</h2></div>' +
     p.properties.map((x) => '<div class="row"><span>' + esc(x.name) + '</span>' + (x.open.length ? '<a class="m" href="#/f/' + enc(x.open[0]) + '"><b>' + x.open.length + ' open</b></a>' : '<span class="g">held</span>') + '</div>').join('') +
     '</section><section class="panel pad" style="display:flex;flex-direction:column;gap:6px"><h2>Target</h2><span class="dim">spec</span><span>' + esc(p.spec) + '</span>' +
-    (last ? '<span class="dim">rerun latest</span><code class="cmd"><span class="g">$</span> ' + esc(last.command) + '</code>' : '') + '</section></aside>' +
+    (last && last.command ? '<span class="dim">rerun latest</span>' + cmd(last.command) : '') + '</section></aside>' +
     '<main class="main panel" style="gap:0"><nav class="tabs" role="tablist">' + tabs + '</nav>' + body + '</main></div>';
 }
+
+const frameLabel = (i, n) => (i === n - 1 ? 'violation' : 't' + (i - n + 1));
 
 function finding(id, mode) {
   const f = R.findings.find((x) => x.id === id);
@@ -327,24 +350,28 @@ function finding(id, mode) {
     '<span class="dim">' + esc(f.route) + ' · first ' + esc(when(f.first_seen)) + ' · last ' + esc(when(f.last_seen)) + '</span></div>' +
     '<div class="nums"><div><b>' + f.seen_in + '/' + f.of_sweeps + '</b><span>SWEEPS</span></div><div><b>' + f.runs_hit + '</b><span>RUNS HIT</span></div><div><b>' + (f.status === 'quiet' || f.status === 'closed' ? f.clean_sweeps : f.repro.steps.length) + '</b><span>' + (f.status === 'quiet' || f.status === 'closed' ? 'CLEAN SWEEPS' : 'STEPS SHOWN') + '</span></div></div></section>';
   if (json) {
-    return top + banner + '<section class="panel pad term" style="display:flex;flex-direction:column;gap:10px"><div class="foot"><span><span class="g">$</span> jq \'select(.id=="' + esc(f.id) + '")\' findings.ndjson</span><span>' + esc(f.schema) + '</span></div><pre class="json">' + esc(JSON.stringify(f, null, 2)) + '</pre></section>';
+    return top + banner + '<section class="panel pad term" style="display:flex;flex-direction:column;gap:10px"><div class="foot">' + cmd('jq \'select(.id=="' + f.id + '")\' findings.ndjson') + '<span>' + esc(f.schema) + '</span></div><pre class="json">' + esc(JSON.stringify(f, null, 2)) + '</pre></section>';
   }
   const steps = f.repro.steps.map((s, i) => '<div><span class="g">' + String(i + 1).padStart(2, '0') + '</span><span>' + esc(s.action) + '</span><span class="dim">' + esc(s.route) + '</span></div>').join('');
-  const frames = f.evidence.frames.map((src, i, all) => '<figure><img src="' + esc(src) + '" alt="screen ' + (i - all.length + 1) + ' before the violation" loading="lazy"><figcaption>' + (i === all.length - 1 ? 'violation' : 't' + (i - all.length + 1)) + '</figcaption></figure>').join('');
+  // Each frame links to its image (so it opens without script too); a click opens it full size in the lightbox.
+  const frames = f.evidence.frames.map((src, i, all) => {
+    const alt = 'screen ' + (i - all.length + 1) + ' before the violation';
+    return '<figure><a class="zoom" href="' + esc(src) + '" data-frame="' + i + '" aria-label="' + alt + ', full size"><img src="' + esc(src) + '" alt="' + alt + '" loading="lazy"></a><figcaption>' + frameLabel(i, all.length) + '</figcaption></figure>';
+  }).join('');
   const snaps = f.snapshots.map((s) => '<div class="kv"><span class="dim">' + esc(s.name ?? '') + '</span><code>' + esc(typeof s.value === 'string' ? s.value : JSON.stringify(s.value)) + '</code></div>').join('');
   const hist = sweepsOf(f).slice().reverse().map((h) => '<div class="row" style="padding:6px 0"><span><span class="sq' + (f.sweeps.includes(h.sweep) ? ' on' : '') + '" style="--k:' + k + '"></span> sweep ' + h.sweep + '</span><span class="dim">' + esc(when(h.at)) + '</span></div>').join('');
   return top + banner +
     '<div class="cols"><div class="main">' +
     '<section class="panel pad" style="display:flex;flex-direction:column;gap:8px"><h2>What happened</h2><span class="w" style="font-size:15px">' + esc(f.property) + ' failed on ' + esc(f.route) + '.</span><span class="dim">' + esc(f.url) + '</span></section>' +
     '<section class="panel pad term" style="display:flex;flex-direction:column;gap:8px"><h2 class="h">Last actions before it</h2><div class="steps">' + steps + '</div>' +
-    '<code class="cmd dim" style="margin-top:8px"><span class="g">$</span> ' + esc(f.repro.command || 'seed ' + f.repro.seed) + '</code>' +
-    (f.repro.replay ? '<code class="cmd dim"><span class="g">$</span> ' + esc(f.repro.replay) + ' <span class="dim">the same trace, replayed</span></code>' : '') + '</section>' +
+    (f.repro.command ? cmd(f.repro.command, { dim: true, style: 'margin-top:8px' }) : '<span class="dim" style="margin-top:8px">seed ' + f.repro.seed + '</span>') +
+    (f.repro.replay ? cmd(f.repro.replay, { dim: true, note: 'the same trace, replayed' }) : '') + '</section>' +
     (frames ? '<section class="panel pad" style="display:flex;flex-direction:column;gap:12px"><h2>Evidence</h2><div class="frames">' + frames + '</div></section>' : '') +
     '</div><aside class="side">' +
     '<section class="panel pad"><h2>What the property saw</h2>' + (snaps || '<div class="dim">nothing captured</div>') + '</section>' +
     '<section class="panel pad"><h2>History</h2>' + hist + '</section>' +
     '<section class="panel pad" style="display:flex;flex-direction:column;gap:6px"><h2>Run</h2><span>' + esc(f.repro.run) + '</span><span class="dim">seed ' + f.repro.seed + ' · ' + esc(targetOf(f.target)) + '</span>' +
-    '<span class="dim" style="margin-top:6px">every state of the run, step by step</span><code class="cmd"><span class="g">$</span> ' + esc(f.evidence.inspect) + '</code></section>' +
+    '<span class="dim" style="margin-top:6px">every state of the run, step by step</span>' + cmd(f.evidence.inspect) + '</section>' +
     '</aside></div>';
 }
 
@@ -358,5 +385,59 @@ function render() {
   window.scrollTo(0, 0);
 }
 window.addEventListener('hashchange', render);
+
+// Copy buttons. navigator.clipboard needs a secure context (file:// and localhost count); execCommand covers the rest.
+const copyText = (text) => {
+  if (navigator.clipboard && window.isSecureContext) return navigator.clipboard.writeText(text);
+  const t = document.createElement('textarea');
+  t.value = text; t.setAttribute('readonly', ''); t.style.position = 'fixed'; t.style.opacity = '0';
+  document.body.appendChild(t); t.select();
+  const ok = document.execCommand('copy');
+  t.remove();
+  return ok ? Promise.resolve() : Promise.reject(new Error('copy failed'));
+};
+const flash = (btn, label, cls) => {
+  btn.textContent = label; btn.classList.toggle('done', cls === 'done');
+  clearTimeout(btn._t); btn._t = setTimeout(() => { btn.textContent = 'COPY'; btn.classList.remove('done'); }, 1400);
+};
+
+// The lightbox: the current finding's frames, full size; arrows step through them, Esc or a click outside closes.
+const box = document.getElementById('lightbox');
+let shown = { frames: [], i: 0 };
+const showFrame = (i) => {
+  const n = shown.frames.length;
+  shown.i = Math.max(0, Math.min(n - 1, i));
+  const img = box.querySelector('img');
+  img.src = shown.frames[shown.i];
+  img.alt = 'screen ' + (shown.i - n + 1) + ' before the violation';
+  box.querySelector('.cap').textContent = frameLabel(shown.i, n) + ' · ' + (shown.i + 1) + '/' + n + ' · ' + shown.frames[shown.i];
+  box.querySelector('[data-step="-1"]').disabled = shown.i === 0;
+  box.querySelector('[data-step="1"]').disabled = shown.i === n - 1;
+};
+
+document.addEventListener('click', (e) => {
+  const copy = e.target.closest('[data-copy]');
+  if (copy) {
+    copyText(copy.dataset.copy).then(() => flash(copy, 'COPIED', 'done'), () => flash(copy, 'FAILED'));
+    return;
+  }
+  const zoom = e.target.closest('a.zoom');
+  if (zoom && box.showModal && !(e.metaKey || e.ctrlKey || e.shiftKey || e.button)) {
+    e.preventDefault();
+    shown.frames = [...document.querySelectorAll('.frames a.zoom')].map((a) => a.getAttribute('href'));
+    showFrame(Number(zoom.dataset.frame));
+    box.showModal();
+    return;
+  }
+  if (e.target === box || e.target.closest('#lightbox [data-close]')) box.close();
+  const step = e.target.closest('#lightbox [data-step]');
+  if (step) showFrame(shown.i + Number(step.dataset.step));
+});
+document.addEventListener('keydown', (e) => {
+  if (!box.open) return;
+  if (e.key === 'ArrowLeft') showFrame(shown.i - 1);
+  else if (e.key === 'ArrowRight') showFrame(shown.i + 1);
+});
+window.addEventListener('hashchange', () => box.open && box.close());
 render();
 `;

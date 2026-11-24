@@ -35,7 +35,7 @@ const rendered = (r: Report, hash: string): string => {
   const json = /<script type="application\/json" id="report">([\s\S]*?)<\/script>/.exec(html)![1]!;
   const script = /<script>(const TITLE[\s\S]*?)<\/script>/.exec(html)![1]!;
   const app = { innerHTML: '' };
-  const document = { getElementById: (id: string) => (id === 'report' ? { textContent: json } : app) };
+  const document = { getElementById: (id: string) => (id === 'report' ? { textContent: json } : app), addEventListener: () => {} };
   const window = { addEventListener: () => {}, scrollTo: () => {} };
   new Function('document', 'window', 'location', script)(document, window, { hash });
   return app.innerHTML;
@@ -153,4 +153,45 @@ test('a report.json from before summary.all renders its latest-sweep numbers', (
   const home = rendered({ ...report, summary: { ...report.summary, actions: 7, routes: [2, 3] } }, '');
   assert.match(home, /<span class="k">ACTIONS<\/span><span class="v">7<\/span>/);
   assert.match(home, /<span class="k">ROUTES<\/span><span class="v">2\/3<\/span>/);
+});
+
+const withFinding = () =>
+  ({
+    ...project(),
+    findings: [
+      {
+        id: 'F-1', status: 'new', property: 'noErrors', route: '/orders', url: 'http://x/orders', summary: 'boom', project: 'web', target: {},
+        first_seen: 't', last_seen: 't', seen_in: 1, of_sweeps: 1, runs_hit: 1, clean_sweeps: 0, sweeps: [1], snapshots: [], schema: 's',
+        repro: { seed: 7, run: 'web/r1', command: "npx bombadil-kit run --seed 7 --only 'a<b'", steps: [], replay: 'npx bombadil-kit replay web/r1' },
+        evidence: { frames: ['f/a.png', 'f/b.png'], run_dir: 'd', inspect: 'npx bombadil browser inspect tmp/bombadil/runs/web/r1' },
+      },
+    ],
+  }) as unknown as Report;
+
+test('evidence frames open full size in a lightbox, and link to the image without script', () => {
+  const page = rendered(withFinding(), '#/f/F-1');
+  assert.match(page, /<a class="zoom" href="f\/a\.png" data-frame="0" aria-label="screen -1 before the violation, full size"><img src="f\/a\.png"/);
+  assert.match(page, /<a class="zoom" href="f\/b\.png" data-frame="1"/);
+  assert.match(renderHtml(withFinding()), /<dialog id="lightbox"/);
+});
+
+test('every command on a finding page has a copy button carrying the exact command', () => {
+  const page = rendered(withFinding(), '#/f/F-1');
+  assert.match(page, /data-copy="npx bombadil-kit run --seed 7 --only &#39;a&lt;b&#39;"/);
+  assert.match(page, /data-copy="npx bombadil-kit replay web\/r1"/);
+  assert.match(page, /data-copy="npx bombadil browser inspect tmp\/bombadil\/runs\/web\/r1"/);
+  assert.match(rendered(withFinding(), '#/f/F-1/json'), /data-copy="jq &#39;select\(\.id==&quot;F-1&quot;\)&#39; findings\.ndjson"/);
+  assert.match(rendered(withFinding(), ''), /data-copy="jq -c &#39;select\(\.status==&quot;open&quot; or \.status==&quot;new&quot;\)&#39; findings\.ndjson"/);
+});
+
+test('project rerun commands have copy buttons; replays do not', () => {
+  const r = project();
+  const runs = [
+    { id: 'web/r1', seed: 1, actions: 5, exit_code: 0, started_at: 't', command: 'npx bombadil-kit run --seed 1' },
+    { id: 'web/r2', seed: 1, actions: 5, exit_code: 0, started_at: 't', command: 'x', replay_of: 'web/r1' },
+  ];
+  const withRuns = { ...r, projects: [{ ...r.projects[0]!, runs }] } as Report;
+  assert.match(rendered(withRuns, '#/p/web'), /rerun latest[\s\S]*data-copy="npx bombadil-kit run --seed 1"/);
+  const sweeps = rendered(withRuns, '#/p/web/sweeps');
+  assert.equal(sweeps.match(/data-copy=/g)?.length, 2, 'the sidebar and the sweep run, not the replay');
 });
