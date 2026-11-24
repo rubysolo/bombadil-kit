@@ -1,6 +1,7 @@
 import { execFileSync, spawn } from 'node:child_process';
 import { closeSync, openSync } from 'node:fs';
 import { createInterface } from 'node:readline';
+import { bombadilTrace, type TraceReader } from '../trace.ts';
 
 /** A dev server the sweep started. */
 export interface Server {
@@ -24,6 +25,8 @@ export interface Processes {
   bombadil(o: { bin: string; args: string[]; cwd: string; line: (l: string) => void }): Promise<number>;
   /** Bombadil's version, as `bombadil --version` prints it. */
   bombadilVersion(bin: string): string;
+  /** Reads traces with that Bombadil (`bombadil trace`). */
+  trace(bin: string): TraceReader;
   /** `git -C root …`'s output, trimmed; '' when git fails. */
   git(root: string, args: string[]): string;
   sleep(ms: number): Promise<void>;
@@ -72,6 +75,8 @@ export const realProcesses: Processes = {
     }),
 
   bombadilVersion: (bin) => execFileSync(bin, ['--version'], { encoding: 'utf8' }).trim().split(/\s+/).pop() ?? '',
+
+  trace: bombadilTrace,
 
   git: (root, args) => {
     try {

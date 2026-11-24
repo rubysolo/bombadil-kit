@@ -7,6 +7,7 @@ import { buildReport, type Report } from './report.ts';
 import { readRunRecord } from './record.ts';
 import { listRuns, readRun, type RunResult } from './runs.ts';
 import { applySweep, emptyState, type FindingRecord, type State } from './state.ts';
+import type { TraceReader } from '../trace.ts';
 
 export type FailOn = 'none' | 'new' | 'open';
 
@@ -27,6 +28,8 @@ export interface GenerateOptions {
   baseline?: string;
   /** Per project, its routes file (the config's `projects.<name>.routes`), in preference to routes.json beside the spec. */
   routes?: Record<string, string>;
+  /** How run traces are read: `bombadilTrace` (src/trace.ts), or a test's fake. */
+  trace: TraceReader;
 }
 
 const readState = (path: string): State => (existsSync(path) ? (JSON.parse(readFileSync(path, 'utf8')) as State) : emptyState());
@@ -56,7 +59,7 @@ const build = (opts: GenerateOptions): { report: Report; exitCode: number } => {
   for (const dir of listRuns(opts.runsRoot)) {
     const meta = readRunRecord(dir);
     if (`${meta.project}/${basename(dir)}` in state.runs) continue;
-    fresh.push(readRun(dir, infoFor(meta.project, meta.spec).routes, meta));
+    fresh.push(readRun(dir, infoFor(meta.project, meta.spec).routes, opts.trace, meta));
   }
   state = applySweep(state, fresh, opts.now);
   if (state.sweeps.length === 0) throw new Error(`no runs under ${opts.runsRoot}: run the fuzzer first`);

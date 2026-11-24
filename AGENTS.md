@@ -53,6 +53,7 @@ Installed as a dependency, this file and the prompts are at
 spec/index.ts      bombadil-kit/spec: properties + actions (TypeScript; Bombadil bundles it)
 src/page-protocol.ts  the page protocol: the window fields (__mock*) and fuzz_* cookies the app,
                    spec and runner share; dependency-free, bundled into the spec from source
+src/trace.ts       reads a run's trace.bin through `bombadil trace` (the runner and the report)
 src/app/           bombadil-kit/faults, /rtk, /faker, /console: imported by the app in fuzz mode
 src/runner/        bombadil-kit run: the sweep (run.ts) behind a process seam (processes.ts)
 src/report/        the report generator; record.ts owns run.json

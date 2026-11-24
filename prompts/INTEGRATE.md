@@ -24,7 +24,7 @@ If there's no mock mode, stop here: see AGENTS.md.
 
 ```bash
 npm i -D https://github.com/rubysolo/bombadil-kit/releases/download/<tag>/bombadil-kit-<version>.tgz \
-  @antithesishq/bombadil@0.7.10 esbuild
+  @antithesishq/bombadil@0.8.0 esbuild
 ```
 
 Copy `templates/bombadil-kit.json` to the repo root and fill it in: the app's

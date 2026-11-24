@@ -1,9 +1,10 @@
-import { existsSync, readdirSync, readFileSync } from 'node:fs';
+import { existsSync, readdirSync } from 'node:fs';
 import { basename, join } from 'node:path';
 import type { CallOutcome } from '../page-protocol.ts';
 import { endpointOf } from '../path-template.ts';
 import { describeAction, detailKey, detailText, findingId, routeTemplate, type Snapshot } from './findings.ts';
 import { readRunRecord, type RunRecord } from './record.ts';
+import { TRACE_FILE, type TraceReader } from '../trace.ts';
 
 export interface Step {
   at: string;
@@ -58,14 +59,6 @@ export interface RunResult {
   /** Times each milestone was reached (the spec's `milestones` extractor); absent when the spec has none. */
   milestones?: Record<string, number>;
   findings: RunFinding[];
-}
-
-interface TraceRow {
-  timestamp: number;
-  action: unknown;
-  state: { url: string; screenshot?: string | null };
-  snapshots?: { name: string | null; value: unknown }[];
-  violations: { name: string; violation: unknown }[];
 }
 
 const iso = (micros: number): string => new Date(Math.floor(micros / 1000)).toISOString();
@@ -126,27 +119,29 @@ const readApi = (snaps: ApiSnap[]): ApiCoverage | undefined => {
 const STEPS = 8;
 const FRAMES = 3;
 
-/** One run directory, read. `meta` is its run.json, when the caller has read it already. */
-export const readRun = (dir: string, knownRoutes: readonly string[], meta: RunRecord = readRunRecord(dir)): RunResult => {
-  const rows: TraceRow[] = readFileSync(join(dir, 'trace.jsonl'), 'utf8')
-    .split('\n')
-    .filter((line) => line.trim() !== '')
-    .map((line) => JSON.parse(line) as TraceRow);
-
+/**
+ * One run directory, read: its trace through `trace`, a state at a time. Each
+ * finding's last frames before its first violation are written to
+ * `<dir>/screenshots/`. `meta` is its run.json, when the caller has read it already.
+ */
+export const readRun = (dir: string, knownRoutes: readonly string[], trace: TraceReader, meta: RunRecord = readRunRecord(dir)): RunResult => {
+  const file = join(dir, TRACE_FILE);
   const routes: Record<string, number> = {};
   const rendered = new Set<string>();
   const api: ApiSnap[] = [];
   let milestones: Record<string, number> | undefined;
   const byId = new Map<string, RunFinding>();
-  const frame = (r: TraceRow): string | undefined => {
-    const name = r.state.screenshot ? basename(r.state.screenshot) : undefined;
-    const path = name ? join(dir, 'screenshots', name) : undefined;
-    return path && existsSync(path) ? path : undefined;
-  };
+  // The last STEPS states, for a finding's steps and frames.
+  const recent: { index: number; at: string; action: unknown; route: string; screenshot: boolean }[] = [];
+  const windows = new Map<string, number[]>();
+  let actions = 0;
 
-  rows.forEach((r, i) => {
+  for (const r of trace.states(file)) {
     const route = routeTemplate(r.state.url, knownRoutes);
     routes[route] = (routes[route] ?? 0) + 1;
+    if (r.action !== null) actions += 1;
+    recent.push({ index: r.index, at: iso(r.timestamp), action: r.action, route, screenshot: !!r.state.screenshot });
+    if (recent.length > STEPS) recent.shift();
     for (const snap of r.snapshots ?? []) {
       if (snap.name === 'api' && snap.value && typeof snap.value === 'object') api.push(snap.value as ApiSnap);
       if (snap.name === 'milestones' && Array.isArray(snap.value)) {
@@ -154,7 +149,7 @@ export const readRun = (dir: string, knownRoutes: readonly string[], meta: RunRe
         for (const name of snap.value) if (typeof name === 'string') milestones[name] = (milestones[name] ?? 0) + 1;
       }
       if (snap.name !== 'rendered') continue;
-      for (const file of (snap.value as { fresh?: string[] } | null)?.fresh ?? []) rendered.add(file);
+      for (const f of (snap.value as { fresh?: string[] } | null)?.fresh ?? []) rendered.add(f);
     }
 
     for (const v of r.violations ?? []) {
@@ -166,7 +161,7 @@ export const readRun = (dir: string, knownRoutes: readonly string[], meta: RunRe
         seen.count += 1;
         continue;
       }
-      const window = rows.slice(Math.max(0, i - STEPS + 1), i + 1);
+      windows.set(id, recent.filter((w) => w.screenshot).slice(-FRAMES).map((w) => w.index));
       byId.set(id, {
         id,
         project: meta.project,
@@ -178,17 +173,22 @@ export const readRun = (dir: string, knownRoutes: readonly string[], meta: RunRe
         first_at: iso(r.timestamp),
         url: r.state.url,
         snapshots,
-        steps: window.map((w) => ({ at: iso(w.timestamp), action: describeAction(w.action), route: routeTemplate(w.state.url, knownRoutes) })),
-        frames: window.map(frame).filter((f): f is string => f !== undefined).slice(-FRAMES),
+        steps: recent.map((w) => ({ at: w.at, action: describeAction(w.action), route: w.route })),
+        frames: [],
       });
     }
-  });
+  }
+
+  for (const [id, indices] of windows) {
+    const files = trace.screenshots(file, join(dir, 'screenshots'), indices);
+    byId.get(id)!.frames = indices.flatMap((i) => (files.has(i) ? [files.get(i)!] : []));
+  }
 
   return {
     id: `${meta.project}/${basename(dir)}`,
     dir,
     meta,
-    actions: rows.filter((r) => r.action !== null).length,
+    actions,
     routes,
     rendered: [...rendered].sort(),
     ...(api.length ? { api: readApi(api)! } : {}),
@@ -197,7 +197,7 @@ export const readRun = (dir: string, knownRoutes: readonly string[], meta: RunRe
   };
 };
 
-/** Every run directory (one holding run.json and trace.jsonl) under `<root>/<project>/`. */
+/** Every run directory (one holding run.json and its trace) under `<root>/<project>/`. */
 export const listRuns = (root: string): string[] => {
   if (!existsSync(root)) return [];
   const dirs: string[] = [];
@@ -205,7 +205,7 @@ export const listRuns = (root: string): string[] => {
     if (!project.isDirectory()) continue;
     for (const run of readdirSync(join(root, project.name), { withFileTypes: true })) {
       const dir = join(root, project.name, run.name);
-      if (run.isDirectory() && existsSync(join(dir, 'run.json')) && existsSync(join(dir, 'trace.jsonl'))) dirs.push(dir);
+      if (run.isDirectory() && existsSync(join(dir, 'run.json')) && existsSync(join(dir, TRACE_FILE))) dirs.push(dir);
     }
   }
   return dirs.sort();

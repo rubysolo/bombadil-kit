@@ -6,6 +6,7 @@ import { generate } from '../report/generate.ts';
 import { summaryLine } from '../report/report.ts';
 import { encodeCookies } from '../page-protocol.ts';
 import { realProcesses, type Processes, type Server } from './processes.ts';
+import { bombadilBin, TRACE_FILE, type TraceReader } from '../trace.ts';
 
 export interface RunOptions {
   project: string;
@@ -37,7 +38,7 @@ export interface RunOptions {
 }
 
 /** Rebuilds `<out>/report` from `<out>/runs`, as `bombadil-kit report` does with its defaults. */
-export const sweepReport = (loaded: Loaded, baseline?: string, now = new Date().toISOString()) =>
+export const sweepReport = (loaded: Loaded, trace: TraceReader, baseline?: string, now = new Date().toISOString()) =>
   generate({
     runsRoot: join(loaded.out, 'runs'),
     out: join(loaded.out, 'report'),
@@ -46,13 +47,14 @@ export const sweepReport = (loaded: Loaded, baseline?: string, now = new Date().
     title: loaded.config.title,
     baseline,
     routes: projectRoutes(loaded),
+    trace,
   }).report;
 
 /** After a sweep's runs: rebuild the report, or with `--no-report` say how to. The lines for stderr. */
-export const sweepEnd = (loaded: Loaded, o: Pick<RunOptions, 'baseline' | 'report'>): string[] => {
+export const sweepEnd = (loaded: Loaded, o: Pick<RunOptions, 'baseline' | 'report'>, trace: TraceReader): string[] => {
   if (o.report === false) return [`--no-report: runs are in ${join(loaded.out, 'runs')}; \`bombadil-kit report\` folds them in`];
   try {
-    const report = sweepReport(loaded, o.baseline);
+    const report = sweepReport(loaded, trace, o.baseline);
     return [summaryLine(report), `→ ${join(loaded.out, 'report', 'index.html')}`];
   } catch (err) {
     return [`report: ${(err as Error).message}`];
@@ -62,11 +64,6 @@ export const sweepEnd = (loaded: Loaded, o: Pick<RunOptions, 'baseline' | 'repor
 const stamp = (d = new Date()) => {
   const p = (n: number) => String(n).padStart(2, '0');
   return `${d.getFullYear()}${p(d.getMonth() + 1)}${p(d.getDate())}-${p(d.getHours())}${p(d.getMinutes())}${p(d.getSeconds())}`;
-};
-
-const bombadilBin = (root: string) => {
-  const local = join(root, 'node_modules/.bin/bombadil');
-  return existsSync(local) ? local : 'bombadil';
 };
 
 /** Selects flows by name, in flows.json order; unknown names throw. */
@@ -102,7 +99,7 @@ export const bombadilArgs = (o: {
 }): string[] => {
   // Bombadil refuses --reproduce beside --time-limit and --exit-on-violation.
   const replay = o.replay !== undefined;
-  const args = ['browser', 'test', ...(replay ? [] : ['--time-limit', o.time]), '--width', String(o.width), '--height', String(o.height), '--output-path', o.outDir];
+  const args = ['browser', 'test', ...(replay ? [] : ['--time-limit', o.time]), '--width', String(o.width), '--height', String(o.height), '--output-path', join(o.outDir, TRACE_FILE)];
   if (o.headless) args.push('--headless');
   if (!o.sandbox) args.push('--no-sandbox');
   if (replay) args.push('--reproduce', o.replay!);
@@ -276,7 +273,7 @@ const sweep = async (loaded: Loaded, o: RunOptions, procs: Processes, runs: Swee
       });
       writeFileSync(join(outDir, 'app.log'), readFileSync(logPath).subarray(mark));
       if (rc === 0) console.error('  ✓ no violations');
-      else if (rc === 2) console.error(`  ✗ property violation: npx bombadil browser inspect ${outDir}`);
+      else if (rc === 2) console.error(`  ✗ property violation: npx bombadil browser inspect ${join(outDir, TRACE_FILE)}`);
       else console.error(`  ✗ bombadil exited ${rc}`);
       status = fold(status, rc);
 
@@ -289,7 +286,7 @@ const sweep = async (loaded: Loaded, o: RunOptions, procs: Processes, runs: Swee
     server?.stop();
 
     // One report rebuild for all the flows: they are one sweep.
-    for (const line of sweepEnd(loaded, o)) console.error(line);
+    for (const line of sweepEnd(loaded, o, procs.trace(bombadil))) console.error(line);
     return status;
   } finally {
     server?.stop();
@@ -306,8 +303,8 @@ const sweep = async (loaded: Loaded, o: RunOptions, procs: Processes, runs: Swee
 const replay = (loaded: Loaded, o: RunOptions): RunOptions => {
   const dir = resolve(loaded.root, o.reproduce!);
   const meta = readRunRecord(dir);
-  const trace = join(dir, 'trace.jsonl');
-  if (!existsSync(trace)) throw new Error(`${dir} has no trace.jsonl to replay`);
+  const trace = join(dir, TRACE_FILE);
+  if (!existsSync(trace)) throw new Error(`${dir} has no ${TRACE_FILE} to replay (a run from Bombadil before 0.8 can't be)`);
   const project = replayProject(meta, o.project || undefined);
   const p = loaded.config.projects[project];
   if (!p) throw new Error(`run ${dir} is project ${project}, which bombadil-kit.json has no entry for`);

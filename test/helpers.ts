@@ -1,7 +1,8 @@
-import { mkdirSync, mkdtempSync, writeFileSync } from 'node:fs';
+import { mkdirSync, mkdtempSync, readFileSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildRun, writeRunRecord } from '../src/report/record.ts';
+import { TRACE_FILE, type TraceReader, type TraceRow } from '../src/trace.ts';
 
 // Bombadil timestamps are microseconds since the epoch.
 export const T0 = Date.UTC(2026, 10, 19, 19, 26, 0) * 1000;
@@ -9,7 +10,7 @@ export const T0 = Date.UTC(2026, 10, 19, 19, 26, 0) * 1000;
 export type Row = {
   timestamp: number;
   action: unknown;
-  state: { url: string; screenshot?: string };
+  state: { url: string; screenshot?: string | null };
   snapshots: unknown[];
   violations: unknown[];
 };
@@ -35,7 +36,7 @@ export const reaching = (r: Row, names: string[]): Row => ({
 export const row = (i: number, url: string, action: unknown, violations: unknown[] = []): Row => ({
   timestamp: T0 + i * 1_000_000,
   action,
-  state: { url: `http://127.0.0.1:5199${url}`, screenshot: `/abs/run/screenshots/${T0 + i * 1_000_000}.jpeg` },
+  state: { url: `http://127.0.0.1:5199${url}`, screenshot: 'jpeg' },
   snapshots: [],
   violations,
 });
@@ -84,22 +85,44 @@ export interface RunSpec {
   expected?: string[];
 }
 
-/** Writes a run directory (run.json as the runner builds it, trace.jsonl, empty screenshots) and returns its path. */
+/** A trace file the way `fakeTrace` reads it: one row per line, JSON, in place of Bombadil's binary. */
+export const writeTrace = (file: string, rows: Row[]) => writeFileSync(file, rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
+
+/**
+ * Reads what `writeTrace` wrote, as `bombadilTrace` reads a real trace: a
+ * state's index is its line. A screenshot is written as `<index>.jpeg`.
+ */
+export const fakeTrace: TraceReader = {
+  states: (file) =>
+    readFileSync(file, 'utf8')
+      .split('\n')
+      .filter((l) => l.trim() !== '')
+      .map((l, index) => ({ index, ...(JSON.parse(l) as Omit<TraceRow, 'index'>) })),
+  screenshots: (file, dir, indices) => {
+    const states = fakeTrace.states(file) as TraceRow[];
+    mkdirSync(dir, { recursive: true });
+    const files = new Map<number, string>();
+    for (const i of indices) {
+      if (!states[i]?.state.screenshot) continue;
+      files.set(i, join(dir, `${i}.jpeg`));
+      writeFileSync(files.get(i)!, 'jpeg');
+    }
+    return files;
+  },
+};
+
+/** Writes a run directory (run.json as the runner builds it, its trace for `fakeTrace`) and returns its path. */
 export const writeRun = (root: string, run: RunSpec): string => {
   const project = run.project ?? 'web';
   const dir = join(root, project, run.id);
-  mkdirSync(join(dir, 'screenshots'), { recursive: true });
-  writeFileSync(join(dir, 'trace.jsonl'), run.rows.map((r) => JSON.stringify(r)).join('\n') + '\n');
-  for (const r of run.rows) {
-    const name = r.state.screenshot?.split('/').pop();
-    if (name) writeFileSync(join(dir, 'screenshots', name), 'jpeg');
-  }
+  mkdirSync(dir, { recursive: true });
+  writeTrace(join(dir, TRACE_FILE), run.rows);
   writeRunRecord(
     dir,
     buildRun(
       {
         project, named: false, kind: 'mock', seed: run.seed ?? 1, faults: 0.1, latency: 50, refDate: '2026-11-19',
-        time: '1m', width: 390, height: 844, commit: 'abc1234', bombadil: '0.7.10',
+        time: '1m', width: 390, height: 844, commit: 'abc1234', bombadil: '0.8.0',
       },
       {
         flow: run.flow ?? 'explore', milestones: run.expected, spec: run.spec ?? 'apps/web/bombadil/spec.ts',

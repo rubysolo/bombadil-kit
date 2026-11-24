@@ -1,7 +1,7 @@
-import { appendFileSync, writeFileSync } from 'node:fs';
-import { join } from 'node:path';
+import { appendFileSync } from 'node:fs';
+import { dirname } from 'node:path';
 import type { Processes } from '../src/runner/processes.ts';
-import { row } from './helpers.ts';
+import { fakeTrace, row, writeTrace } from './helpers.ts';
 
 export interface FakeOptions {
   /** Something answers the port before the sweep starts a server. */
@@ -21,7 +21,7 @@ export interface FakeOptions {
 /**
  * A fake process adapter: a server and a Bombadil that follow a fake clock
  * (each sleep advances it) and leave what the real ones would on disk: the
- * server's log lines, a run's trace.jsonl.
+ * server's log lines, a run's trace (as `fakeTrace` reads it).
  */
 export const fakeProcesses = (f: FakeOptions = {}) => {
   const calls = {
@@ -58,12 +58,13 @@ export const fakeProcesses = (f: FakeOptions = {}) => {
       calls.bombadil.push(args);
       if (f.bombadilThrows) throw new Error('spawn bombadil ENOENT');
       const out = args[args.indexOf('--output-path') + 1]!;
-      writeFileSync(join(out, 'trace.jsonl'), `${JSON.stringify(row(0, '/login', null))}\n`);
-      if (server) appendFileSync(server.log, `server: GET for ${out}\n`);
+      writeTrace(out, [row(0, '/login', null)]);
+      if (server) appendFileSync(server.log, `server: GET for ${dirname(out)}\n`);
       const rc = f.rc ?? [0];
       return rc[Math.min(calls.bombadil.length - 1, rc.length - 1)]!;
     },
-    bombadilVersion: () => '0.7.10',
+    bombadilVersion: () => '0.8.0',
+    trace: () => fakeTrace,
     git: (_root, args) => (args[0] === 'rev-parse' ? 'abc1234' : ''),
     sleep: async (ms) => void (now += ms),
     onInterrupt: () => {
