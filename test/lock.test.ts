@@ -63,12 +63,12 @@ test('concurrent report builds lose no sweeps and no runs', async () => {
   const helpers = fileURLToPath(new URL('./helpers.ts', import.meta.url));
   const generate = fileURLToPath(new URL('../src/report/generate.ts', import.meta.url));
   const child = (i: number) => `
-    import { writeRun, row } from ${JSON.stringify(helpers)};
+    import { fakeTrace, writeRun, row } from ${JSON.stringify(helpers)};
     import { generate } from ${JSON.stringify(generate)};
     for (let n = 0; n < 5; n++) {
       writeRun(${JSON.stringify(runs)}, { id: 'c${i}-' + n, project: 'p${i}', spec: 'app/bombadil/spec.ts', rows: [row(0, '/login', null)] });
       const now = 'c${i}-' + n;
-      const { report } = generate({ runsRoot: ${JSON.stringify(runs)}, out: ${JSON.stringify(out)}, repoRoot: ${JSON.stringify(root)}, now });
+      const { report } = generate({ trace: fakeTrace, runsRoot: ${JSON.stringify(runs)}, out: ${JSON.stringify(out)}, repoRoot: ${JSON.stringify(root)}, now });
       // The sweep this build made, if it found runs no other build had folded.
       if (report.sweep.at === now) console.log(report.sweep.id + ' ' + now);
     }`;

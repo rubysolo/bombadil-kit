@@ -18,6 +18,7 @@
 import { execFileSync } from 'node:child_process';
 import { existsSync, readFileSync, realpathSync } from 'node:fs';
 import { dirname, join, relative, resolve } from 'node:path';
+import { bombadilBin, bombadilTrace } from './trace.ts';
 import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { loadConfig, pickProject, projectRoutes, readFlows, type Loaded, type ProjectConfig } from './config.ts';
@@ -132,6 +133,7 @@ const cmdReport = (loaded: Loaded, argv: string[]) => {
     title: values.title,
     baseline: values.baseline && resolve(values.baseline),
     routes: projectRoutes(loaded),
+    trace: bombadilTrace(bombadilBin(loaded.root)),
   });
   console.error(summaryLine(report));
   console.error(`→ ${join(resolve(values.out), 'index.html')}`);

@@ -4,6 +4,7 @@ import type { Snapshot } from './findings.ts';
 import type { ApiCoverage, Step } from './runs.ts';
 import type { CallOutcome } from '../page-protocol.ts';
 import { mergeApi, statusOf, type FindingRecord, type FlowMilestones, type RunInfo, type State, type Status } from './state.ts';
+import { TRACE_FILE } from '../trace.ts';
 
 /**
  * report.json (schema bombadil-report/v1): the view of state.json that the
@@ -229,7 +230,7 @@ export const buildReport = (state: State, info: Record<string, ProjectInfo>, opt
         evidence: {
           frames: opts.evidence(f),
           run_dir: f.last.run,
-          inspect: `npx bombadil browser inspect ${opts.runsDir ?? 'tmp/bombadil/runs'}/${f.last.run}`,
+          inspect: `npx bombadil browser inspect ${opts.runsDir ?? 'tmp/bombadil/runs'}/${f.last.run}/${TRACE_FILE}`,
         },
         snapshots: f.last.snapshots,
       };

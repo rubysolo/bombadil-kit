@@ -1,11 +1,11 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
+import { copyFileSync, existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs';
 import { execFileSync } from 'node:child_process';
 import { join } from 'node:path';
 import { fileURLToPath } from 'node:url';
 import { generate } from '../src/report/generate.ts';
-import { always, rendering, row, timedOut, tmp, writeRun } from './helpers.ts';
+import { always, fakeTrace, rendering, row, timedOut, tmp, writeRun } from './helpers.ts';
 
 const setup = () => {
   const root = tmp();
@@ -35,7 +35,7 @@ test('generate writes the report, the agent files and the evidence', () => {
   const { root, runs, out } = setup();
   failingRun(runs, '20261119-192622-s4242');
 
-  const { report, exitCode } = generate({ runsRoot: runs, out, repoRoot: root, now: '2026-11-19T20:00:00Z', failOn: 'new' });
+  const { report, exitCode } = generate({ trace: fakeTrace, runsRoot: runs, out, repoRoot: root, now: '2026-11-19T20:00:00Z', failOn: 'new' });
   assert.equal(exitCode, 1);
   assert.equal(report.summary.new, 2);
 
@@ -48,7 +48,7 @@ test('generate writes the report, the agent files and the evidence', () => {
   assert.equal(write.evidence.frames.length, 3);
   for (const frame of write.evidence.frames) assert.ok(existsSync(join(out, frame)), frame);
   // The full run, every state, in Bombadil's own viewer.
-  assert.equal(write.evidence.inspect, 'npx bombadil browser inspect runs/web/20261119-192622-s4242');
+  assert.equal(write.evidence.inspect, 'npx bombadil browser inspect runs/web/20261119-192622-s4242/trace.bin');
 
   const p = report.projects[0]!;
   assert.deepEqual(p.properties.map((x) => x.name), ['noLeakedValues', 'failedWritesAreShown']);
@@ -63,8 +63,8 @@ test('generate writes the report, the agent files and the evidence', () => {
 test('generating again with no new runs keeps the same sweep', () => {
   const { root, runs, out } = setup();
   failingRun(runs, 'r1');
-  generate({ runsRoot: runs, out, repoRoot: root, now: 't1' });
-  const { report } = generate({ runsRoot: runs, out, repoRoot: root, now: 't2' });
+  generate({ trace: fakeTrace, runsRoot: runs, out, repoRoot: root, now: 't1' });
+  const { report } = generate({ trace: fakeTrace, runsRoot: runs, out, repoRoot: root, now: 't2' });
   assert.equal(report.sweep.id, 1);
   assert.equal(report.summary.new, 2);
 });
@@ -72,13 +72,13 @@ test('generating again with no new runs keeps the same sweep', () => {
 test('a later clean sweep moves findings to quiet, and --fail-on open passes', () => {
   const { root, runs, out } = setup();
   failingRun(runs, 'r1');
-  generate({ runsRoot: runs, out, repoRoot: root, now: 't1' });
+  generate({ trace: fakeTrace, runsRoot: runs, out, repoRoot: root, now: 't1' });
   writeRun(runs, {
     id: 'r2',
     spec: 'app/bombadil/spec.ts',
     rows: [row(0, '/login', null), row(1, '/orders/ACTIVE-STORE/prepare-store', 'Wait')],
   });
-  const { report, exitCode } = generate({ runsRoot: runs, out, repoRoot: root, now: 't2', failOn: 'open' });
+  const { report, exitCode } = generate({ trace: fakeTrace, runsRoot: runs, out, repoRoot: root, now: 't2', failOn: 'open' });
   assert.equal(report.sweep.id, 2);
   assert.deepEqual(report.findings.map((f) => f.status), ['quiet', 'quiet']);
   assert.equal(exitCode, 0);
@@ -94,7 +94,7 @@ test('generate writes coverage.json: rendered files per flow, minus deleted ones
     spec: 'app/bombadil/spec.ts',
     rows: [rendering(row(0, '/login', null), ['app/src/Live.tsx', 'app/src/Deleted.tsx'])],
   });
-  generate({ runsRoot: runs, out, repoRoot: root, now: 't1' });
+  generate({ trace: fakeTrace, runsRoot: runs, out, repoRoot: root, now: 't1' });
   const coverage = JSON.parse(readFileSync(join(out, 'coverage.json'), 'utf8'));
   assert.equal(coverage.schema, 'bombadil-coverage/v1');
   assert.deepEqual(coverage.projects['web'].flows, { deposit: ['app/src/Live.tsx'] });
@@ -105,11 +105,12 @@ test('generate writes coverage.json: rendered files per flow, minus deleted ones
 test('a baseline state.json makes "new" mean new against it', () => {
   const nightly = setup();
   failingRun(nightly.runs, 'main-r1');
-  generate({ runsRoot: nightly.runs, out: nightly.out, repoRoot: nightly.root, now: 't1' });
+  generate({ trace: fakeTrace, runsRoot: nightly.runs, out: nightly.out, repoRoot: nightly.root, now: 't1' });
 
   const pr = setup();
   failingRun(pr.runs, 'pr-r1');
   const { report, exitCode } = generate({
+    trace: fakeTrace,
     runsRoot: pr.runs,
     out: pr.out,
     repoRoot: pr.root,
@@ -124,7 +125,7 @@ test('a baseline state.json makes "new" mean new against it', () => {
 test('a missing baseline is not an error: everything is new', () => {
   const { root, runs, out } = setup();
   failingRun(runs, 'r1');
-  const { report } = generate({ runsRoot: runs, out, repoRoot: root, now: 't1', baseline: join(root, 'nope.json') });
+  const { report } = generate({ trace: fakeTrace, runsRoot: runs, out, repoRoot: root, now: 't1', baseline: join(root, 'nope.json') });
   assert.equal(report.summary.new, 2);
 });
 
@@ -134,7 +135,7 @@ test("a project's routes file wins over the routes.json beside its spec", () => 
   mkdirSync(join(root, 'routes'), { recursive: true });
   writeFileSync(join(root, 'routes/web.json'), JSON.stringify(['/login', '/web-only']));
 
-  const { report } = generate({ runsRoot: runs, out, repoRoot: root, now: '2026-11-19T20:00:00Z', routes: { web: 'routes/web.json' } });
+  const { report } = generate({ trace: fakeTrace, runsRoot: runs, out, repoRoot: root, now: '2026-11-19T20:00:00Z', routes: { web: 'routes/web.json' } });
   const templates = report.projects[0]!.routes.map((r) => r.template);
   assert.ok(templates.includes('/web-only'));
   assert.ok(!templates.includes('/finalize'), 'the beside-the-spec list is not used');
@@ -145,7 +146,7 @@ test('a routes path that does not exist is an error, not an empty list', () => {
   const { root, runs, out } = setup();
   failingRun(runs, '20261119-192622-s4242');
   assert.throws(
-    () => generate({ runsRoot: runs, out, repoRoot: root, now: '2026-11-19T20:00:00Z', routes: { web: 'nope.json' } }),
+    () => generate({ trace: fakeTrace, runsRoot: runs, out, repoRoot: root, now: '2026-11-19T20:00:00Z', routes: { web: 'nope.json' } }),
     /no routes file at nope.json/,
   );
 });
@@ -155,6 +156,9 @@ test('`bombadil-kit report` takes each project\'s routes from bombadil-kit.json'
   failingRun(runs, '20261119-192622-s4242');
   writeFileSync(join(root, 'web-routes.json'), JSON.stringify(['/from-config']));
   writeFileSync(join(root, 'bombadil-kit.json'), JSON.stringify({ projects: { web: { dir: 'app', server: { command: ['true'] }, routes: 'web-routes.json' } } }));
+  // The CLI reads traces with the project's Bombadil: a fake that reads writeTrace's rows.
+  mkdirSync(join(root, 'node_modules/.bin'), { recursive: true });
+  copyFileSync(fileURLToPath(new URL('./fixtures/fake-bombadil.mjs', import.meta.url)), join(root, 'node_modules/.bin/bombadil'));
   const cli = fileURLToPath(new URL('../src/cli.ts', import.meta.url));
   execFileSync(process.execPath, [cli, 'report', '--runs', runs, '--out', out], { cwd: root, stdio: 'ignore' });
   const report = JSON.parse(readFileSync(join(out, 'report.json'), 'utf8'));

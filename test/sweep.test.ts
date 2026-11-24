@@ -155,7 +155,7 @@ test('sweep: --reproduce replays a recorded run with its settings, and records w
   const again = await sweep({ rc: [2] }, { project: '', flows: [], seed: undefined, reproduce: dir, bombadilArgs: ['--exit-on-violation'] }, loaded);
   assert.equal(again.status, 2);
   const args = again.calls.bombadil[0]!;
-  assert.equal(args[args.indexOf('--reproduce') + 1], join(original, 'trace.jsonl'));
+  assert.equal(args[args.indexOf('--reproduce') + 1], join(original, 'trace.bin'));
   assert.ok(!args.includes('--exit-on-violation'), 'nothing after the original -- carries into a replay');
   assert.equal(again.calls.started[0]!.env.SEED, '41');
   const record = again.runs[0]!.record;

@@ -37,7 +37,7 @@ licensed; maintained as-is.
 
 ```bash
 npm i -D https://github.com/rubysolo/bombadil-kit/releases/download/v0.7.0/bombadil-kit-0.7.0.tgz \
-  @antithesishq/bombadil@0.7.10 esbuild
+  @antithesishq/bombadil@0.8.0 esbuild
 ```
 
 Each release's tarball is attached to its GitHub release; a URL install
@@ -102,7 +102,7 @@ npx bombadil-kit run --project web --no-report  # leave the runs for one `report
 npx bombadil-kit run --width 1280 --height 800 # desktop
 npx bombadil-kit list                          # the flows
 npx bombadil-kit report --fail-on new          # exit 1 if the latest sweep found something new
-npx bombadil browser inspect tmp/bombadil/runs/web/<run>   # step through one run
+npx bombadil browser inspect tmp/bombadil/runs/web/<run>/trace.bin   # step through one run
 ```
 
 `run` exits 0 clean, 2 on a property violation, 1 otherwise: a bad option, a
@@ -117,6 +117,13 @@ mock date and viewport, and has Bombadil replay its trace on the same flow and
 spec instead of exploring. The project comes from `run.json` too, so there's no
 need for `--project`. Each finding in `report.json` carries the command as
 `repro.replay`, beside `repro.command`.
+
+A run directory holds `run.json`, the server's `app.log` while it ran, and
+Bombadil's `trace.bin`: every state, screenshots included, compressed.
+`report` reads traces with the project's Bombadil (`bombadil trace`), so it
+needs Bombadil installed where it runs, and writes each finding's frames to
+the run's `screenshots/`. Runs from Bombadil before 0.8 (a `trace.jsonl`) are
+neither read nor replayed.
 
 A replay is best-effort: Bombadil stops one that diverges from the original
 ("reproduction and original test diverged!"), which is common with faults on.

@@ -6,7 +6,7 @@ import { fill, findConfig, loadConfig, pickProject, projectRoutes, readFlows } f
 import { bombadilArgs, sweepEnd, sweepReport, sweepSettings } from '../src/runner/run.ts';
 import { ownArgs, tail as cliTail } from '../src/cli.ts';
 import { selectFlows } from '../src/runner/run.ts';
-import { row, tmp, writeRun } from './helpers.ts';
+import { fakeTrace, row, tmp, writeRun } from './helpers.ts';
 
 const flows = [
   { name: 'explore', start: '/login', allow: ['/*'] },
@@ -149,7 +149,7 @@ test("the report a sweep rebuilds uses each project's routes, as `report` does",
   const loaded = loadConfig(join(root, 'bombadil-kit.json'));
   writeRun(join(loaded.out, 'runs'), { id: '20261119-192622-s1', rows: [row(0, '/login', null)] });
 
-  const report = sweepReport(loaded, undefined, '2026-11-19T20:00:00Z');
+  const report = sweepReport(loaded, fakeTrace, undefined, '2026-11-19T20:00:00Z');
   assert.deepEqual(report.projects[0]!.routes.filter((r) => r.known).map((r) => r.template).sort(), ['/from-config', '/login']);
 });
 
@@ -161,11 +161,11 @@ test('sweepEnd: rebuilds the report, or with --no-report leaves the runs for one
   const loaded = loadConfig(join(root, 'bombadil-kit.json'));
   writeRun(join(loaded.out, 'runs'), { id: '20261119-192622-s1', rows: [row(0, '/login', null)] });
 
-  const skipped = sweepEnd(loaded, { report: false });
+  const skipped = sweepEnd(loaded, { report: false }, fakeTrace);
   assert.ok(!existsSync(join(loaded.out, 'report', 'state.json')));
   assert.match(skipped.join('\n'), /--no-report: .*bombadil-kit report/);
 
-  const built = sweepEnd(loaded, {});
+  const built = sweepEnd(loaded, {}, fakeTrace);
   assert.ok(existsSync(join(loaded.out, 'report', 'state.json')));
   assert.match(built[0]!, /^sweep 1: /);
 });

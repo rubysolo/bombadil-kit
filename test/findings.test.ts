@@ -2,7 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { describeAction, detailKey, detailText, findingId, routeTemplate } from '../src/report/findings.ts';
 import { readRun } from '../src/report/runs.ts';
-import { always, calling, reaching, rendering, row, timedOut, tmp, writeRun } from './helpers.ts';
+import { always, calling, fakeTrace, reaching, rendering, row, timedOut, tmp, writeRun } from './helpers.ts';
 
 test('routeTemplate prefers a known route pattern', () => {
   const known = ['/orders/:orderNumber/prepare-store', '/login'];
@@ -85,7 +85,7 @@ test('readRun groups repeated violations of one bug into one finding', () => {
     ],
   });
 
-  const run = readRun(dir, ['/orders/:orderNumber/prepare-store', '/login', '/dashboard']);
+  const run = readRun(dir, ['/orders/:orderNumber/prepare-store', '/login', '/dashboard'], fakeTrace);
   assert.equal(run.meta.project, 'web');
   assert.equal(run.actions, 5);
   assert.deepEqual(run.routes, { '/login': 2, '/dashboard': 1, '/orders/:orderNumber/prepare-store': 3 });
@@ -116,7 +116,7 @@ test('readRun collects every source file the run rendered', () => {
       rendering(row(2, '/dashboard', 'Wait'), ['apps/a/src/pages/Dashboard.tsx', 'apps/a/src/App.tsx']),
     ],
   });
-  const run = readRun(dir, []);
+  const run = readRun(dir, [], fakeTrace);
   assert.equal(run.meta.flow, 'deposit');
   assert.deepEqual(run.rendered, ['apps/a/src/App.tsx', 'apps/a/src/pages/Dashboard.tsx', 'apps/a/src/pages/Login.tsx']);
 });
@@ -141,7 +141,7 @@ test('readRun counts the mock API calls per endpoint and outcome, with the varia
       row(2, '/orders', 'Wait'),
     ],
   });
-  const run = readRun(dir, []);
+  const run = readRun(dir, [], fakeTrace);
   assert.deepEqual(run.api, {
     calls: {
       'OrderController.getOrder': { ok: 2, slow: 1 },
@@ -155,7 +155,7 @@ test('readRun counts the mock API calls per endpoint and outcome, with the varia
 
 test('readRun has no api for a spec without the api extractor', () => {
   const dir = writeRun(tmp(), { id: 'r1', rows: [row(0, '/login', null)] });
-  assert.equal(readRun(dir, []).api, undefined);
+  assert.equal(readRun(dir, [], fakeTrace).api, undefined);
 });
 
 test('readRun counts the milestones reached, and reads the ones its flow expects from run.json', () => {
@@ -170,12 +170,12 @@ test('readRun counts the milestones reached, and reads the ones its flow expects
       reaching(row(3, '/my-account', 'Click'), ['saved', 'signedOut']),
     ],
   });
-  const run = readRun(dir, []);
+  const run = readRun(dir, [], fakeTrace);
   assert.deepEqual(run.milestones, { saved: 2, signedOut: 1 });
   assert.deepEqual(run.meta.expected_milestones, ['saved', 'persisted']);
 });
 
 test('readRun has no milestones for a spec without the extractor; one that reached none has {}', () => {
-  assert.equal(readRun(writeRun(tmp(), { id: 'r1', rows: [row(0, '/login', null)] }), []).milestones, undefined);
-  assert.deepEqual(readRun(writeRun(tmp(), { id: 'r1', rows: [reaching(row(0, '/login', null), [])] }), []).milestones, {});
+  assert.equal(readRun(writeRun(tmp(), { id: 'r1', rows: [row(0, '/login', null)] }), [], fakeTrace).milestones, undefined);
+  assert.deepEqual(readRun(writeRun(tmp(), { id: 'r1', rows: [reaching(row(0, '/login', null), [])] }), [], fakeTrace).milestones, {});
 });
