@@ -74,6 +74,14 @@ export interface WriteWatch {
   pending: { fault: InjectedFault; entry: number; since: number; leaveBy?: number; delivered?: boolean }[];
   /** Every failed write already taken up, so each is owed one alert, not one per state. */
   seen: { has(f: InjectedFault): boolean; add(f: InjectedFault): unknown };
+  /** The previous state's entry, when its url was given: a write it sent may first be seen on the next. */
+  last?: HistoryEntry;
+}
+
+/** A history entry, by Bombadil's id, and the page's `location.href` on it. */
+export interface HistoryEntry {
+  id: number;
+  url: string;
 }
 
 /** How a fault reads in a finding: `POST /orders → 500`. */
@@ -97,18 +105,30 @@ export const deliveredAt = (f: InjectedFault) => f.deliveredAt ?? f.at;
  * `deliveredAt`, else from first seen. An alert on another page doesn't
  * count; that's how a write that fails silently hid behind an unrelated
  * error.
+ *
+ * With `entry` as `{ id, url }` and a fault that says which page sent it
+ * (`href`), it's owed on that page instead: this state's, or the previous
+ * state's when the walker left it before the fault was captured (then the
+ * leaving rules above apply, so a Back to it later doesn't report it).
+ * An `href` that matches neither falls back to this state's entry.
  */
 export const unannouncedWrite = (
   watch: WriteWatch,
   faults: readonly InjectedFault[],
   now: number,
   quiet: readonly RegExp[],
-  entry: number,
+  on: number | HistoryEntry,
   alertShown: boolean,
   within = 5000,
   fresh = 1500,
   leaveGrace = 1000,
 ): InjectedFault | null => {
+  const here = typeof on === 'number' ? undefined : on;
+  const entry = typeof on === 'number' ? on : on.id;
+  const last = watch.last;
+  watch.last = here;
+  // The entry that sent it, when the fault and the states say: this one or the one before.
+  const sender = (f: InjectedFault) => (f.href === undefined || !here || f.href === here.url || f.href !== last?.url ? entry : last.id);
   for (const f of faults) {
     if (watch.seen.has(f) || !isErrorFault(f) || !isWriteFault(f) || now - deliveredAt(f) >= fresh) continue;
     watch.seen.add(f);
@@ -116,8 +136,8 @@ export const unannouncedWrite = (
     const since = f.deliveredAt ?? now;
     watch.pending.push(
       f.deliveredAt === undefined
-        ? { fault: f, entry, since, leaveBy: now + leaveGrace }
-        : { fault: f, entry, since, leaveBy: f.deliveredAt, delivered: true },
+        ? { fault: f, entry: sender(f), since, leaveBy: now + leaveGrace }
+        : { fault: f, entry: sender(f), since, leaveBy: f.deliveredAt, delivered: true },
     );
   }
   // Captured on its page after the error landed: the walker saw it, so it's owed.

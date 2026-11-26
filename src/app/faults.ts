@@ -141,6 +141,7 @@ export const createFaultInjector = ({ rate, seed, spare = [/^\/mock\//], isWrite
     call(method, path, 'error');
     if (typeof window !== 'undefined') {
       const logged: InjectedFault = { method: method.toUpperCase(), path, status: fault.status, at: Date.now() };
+      if (window.location) logged.href = window.location.href;
       if (isWrite) logged.write = isWrite(method, path);
       if (deliverIn !== undefined) logged.deliveredAt = logged.at + Math.max(0, typeof deliverIn === 'function' ? deliverIn() : deliverIn);
       else if (delivered) logged.deliveredAt = logged.at;

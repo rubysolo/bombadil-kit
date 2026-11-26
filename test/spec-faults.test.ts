@@ -229,6 +229,52 @@ test('unannouncedWrite: the page is where the failure is first seen, so a notice
   assert.equal(unannouncedWrite(w, [late], t + 330, [], 2, true), null);
 });
 
+// Issue #42: entries with their URLs, for faults that say which page sent them (`href`).
+const login = { id: 1, url: 'http://app.test/login' };
+const signup = { id: 2, url: 'http://app.test/create-account' };
+
+test('unannouncedWrite: with `href`, the alert is owed on the page that sent the write, not where it is first seen', () => {
+  // Sign In at +0 on /login, answered 500 at +20. The walker clicked away
+  // first; the first capture holding the fault is on /create-account at +39.
+  // Back on /login at +64, the app shows its error.
+  const f = fault({ deliveredAt: t + 20, href: login.url });
+  const w = watch();
+  assert.equal(unannouncedWrite(w, [], t, [], login, false), null);
+  assert.equal(unannouncedWrite(w, [f], t + 39, [], signup, false), null);
+  assert.equal(unannouncedWrite(w, [f], t + 64, [], login, true), null);
+  // Left before a state on /login was captured after delivery: dropped, as without href.
+  assert.deepEqual(w.pending, []);
+  assert.equal(unannouncedWrite(w, [f], t + 6000, [], signup, false), null);
+});
+
+test('unannouncedWrite: with `href`, a write sent from the page it is first seen on is owed there', () => {
+  const f = fault({ deliveredAt: t + 20, href: signup.url });
+  // The walker moved on before the call started: /create-account sent it and owes the alert.
+  const w = watch();
+  assert.equal(unannouncedWrite(w, [], t, [], login, false), null);
+  assert.equal(unannouncedWrite(w, [f], t + 39, [], signup, false), null);
+  assert.equal(lineOf(unannouncedWrite(w, [f], t + 80, [], login, false)), line);
+  // An alert there settles it.
+  const shown = watch();
+  assert.equal(unannouncedWrite(shown, [], t, [], login, false), null);
+  assert.equal(unannouncedWrite(shown, [f], t + 39, [], signup, true), null);
+  assert.deepEqual(shown.pending, []);
+});
+
+test('unannouncedWrite: an `href` matching neither page, or no url, falls back to where it is first seen', () => {
+  const f = fault({ deliveredAt: t + 20, href: 'http://app.test/elsewhere' });
+  const w = watch();
+  assert.equal(unannouncedWrite(w, [], t, [], login, false), null);
+  assert.equal(unannouncedWrite(w, [f], t + 39, [], signup, false), null);
+  assert.equal(lineOf(unannouncedWrite(w, [f], t + 80, [], login, false)), line);
+  // A bare entry id (no url) ignores href.
+  const bare = watch();
+  const g = fault({ deliveredAt: t + 20, href: login.url });
+  assert.equal(unannouncedWrite(bare, [], t, [], 1, false), null);
+  assert.equal(unannouncedWrite(bare, [g], t + 39, [], 2, false), null);
+  assert.equal(lineOf(unannouncedWrite(bare, [g], t + 64, [], 1, true)), line);
+});
+
 test('unannouncedWrite: only fresh, unquiet error writes; each one owes its own alert', () => {
   assert.equal(unannouncedWrite(watch(), [fault()], t + 1500, [], 1, false), null);
   const quiet = watch();

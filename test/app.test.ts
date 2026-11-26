@@ -66,6 +66,23 @@ test('createFaultInjector: logs each fault on window.__mockFaults', () => {
   }
 });
 
+test('createFaultInjector: logs the page that sent the call as `href`, when there is one', () => {
+  const g = globalThis as { window?: MockWindow & { location?: { href: string } } };
+  g.window = { location: { href: 'http://app.test/login' } };
+  try {
+    const inject = createFaultInjector({ rate: 1, seed: 1 });
+    inject('post', '/session');
+    g.window.location = { href: 'http://app.test/create-account' };
+    inject('post', '/accounts');
+    assert.deepEqual(g.window.__mockFaults!.map((f) => f.href), ['http://app.test/login', 'http://app.test/create-account']);
+    g.window = {};
+    inject('post', '/orders');
+    assert.ok(!('href' in g.window.__mockFaults![0]!));
+  } finally {
+    delete g.window;
+  }
+});
+
 test('createFaultInjector: isWrite fills `write`; without it there is none', () => {
   const g = globalThis as { window?: MockWindow };
   g.window = {};
