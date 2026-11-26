@@ -56,6 +56,12 @@ export interface InjectedFault {
   kind?: FaultKind;
   /** For `slow`: how late the answer came, in ms. */
   delayMs?: number;
+  /**
+   * `location.href` when the call started: the page that sent it.
+   * failedWritesShown owes the alert there, not on the page the walker had
+   * moved on to by the time the fault was first captured.
+   */
+  href?: string;
 }
 
 /** How a mock call ended; see MockCall. */

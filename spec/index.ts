@@ -52,6 +52,7 @@ import {
   unexcusedConsoleErrors,
   type ConsoleExcuse,
   type WriteWatch,
+  type HistoryEntry,
   type FaultKind,
   type InjectedFault,
 } from './faults.ts';
@@ -86,6 +87,7 @@ export {
   unexcusedConsoleErrors,
   type ConsoleExcuse,
   type WriteWatch,
+  type HistoryEntry,
   type FaultKind,
   type InjectedFault,
   type Persisted,
@@ -307,7 +309,7 @@ export const failedWritesShown = ({
     );
     // On the window, like __mockFaults: a page load starts both over.
     const watch = (win.__fuzzWrites ??= { pending: [], seen: new WeakSet() });
-    const fault = unannouncedWrite(watch, win.__mockFaults ?? [], Date.now(), quiet, state.navigationHistory.current.id, alertShown, within * 1000, undefined, leaveGrace);
+    const fault = unannouncedWrite(watch, win.__mockFaults ?? [], Date.now(), quiet, { id: state.navigationHistory.current.id, url: win.location.href }, alertShown, within * 1000, undefined, leaveGrace);
     // `request` first: the report names a finding, and builds its id, from
     // the first string, so one endpoint's failures are one finding whatever
     // the status or record. The full line is the evidence.
