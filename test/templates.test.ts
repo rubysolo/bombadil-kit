@@ -20,6 +20,22 @@ test('the GitHub template parses and has the fuzz job', () => {
   assert.ok(doc.jobs?.fuzz, 'jobs.fuzz');
 });
 
+// Issue #43: a baseline of one nightly made a bug that nightly missed "new"
+// again on the next PR. Each nightly runs on the previous one's state.json.
+test('the GitHub nightly carries the previous nightly’s state on', () => {
+  const doc = parse(read('../templates/github/fuzz.yml')) as {
+    jobs: { fuzz: { steps: { name?: string; if?: string; run?: string }[] } };
+  };
+  const steps = doc.jobs.fuzz.steps;
+  const step = (name: string) => steps.find((s) => s.name === name)!;
+  for (const name of ['find the latest nightly', 'download it']) {
+    assert.doesNotMatch(step(name).if ?? '', /pull_request/, `${name} runs on the nightly too`);
+  }
+  assert.match(step('fuzz').run!, /--baseline tmp\/baseline\/state\.json/);
+  // The gate stays a pull request's.
+  assert.match(step('gate').if!, /pull_request/);
+});
+
 interface GitLabJob {
   script: string[];
   allow_failure?: boolean;
@@ -70,4 +86,14 @@ test('the GitLab job carries the nightly baseline and never reddens a merge requ
   // per-project shape for one project as for several.
   assert.match(script, /affected --all --json/);
   assert.match(script, /run --project "\$p"/);
+});
+
+test('the GitLab nightly carries the previous nightly’s state on, and gates only merge requests', () => {
+  const script = gitlab().fuzz!.script.join('\n');
+  // The download isn't behind the merge-request branch.
+  const download = script.indexOf('/pipelines?ref=$CI_DEFAULT_BRANCH');
+  const before = script.slice(0, download);
+  assert.doesNotMatch(before.slice(before.lastIndexOf('# ---- the baseline')), /if \[ "\$nightly" = 0 \]/);
+  // The report builds on it either way; only a merge request fails on new.
+  assert.match(script, /args=\(--baseline "\$base\/state\.json" --fail-on "\$\(\[ "\$nightly" = 0 \] && echo new \|\| echo none\)"\)/);
 });

@@ -1,10 +1,11 @@
 # Bombadil fuzzing with bombadil-kit. Copy to .github/workflows/fuzz.yml and
 # adjust the paths, the node version file, and the runner.
 #
-# Nightly on main: every flow, 2 minutes each. The report it uploads
+# Nightly on main: every flow, 2 minutes each, on the previous nightly's
+# state.json, so the history adds up night after night. The report it uploads
 # (`fuzz-main`) is the baseline for pull requests: its coverage.json maps
 # source files to the flows that render them, and its state.json is what
-# "new" is measured against.
+# "new" is measured against: a finding any nightly has seen isn't new.
 #
 # On a pull request: only the flows its changes touch (`bombadil-kit
 # affected`), with more time each, reported against the latest nightly. The
@@ -72,9 +73,10 @@ jobs:
             echo "CHROME=$(ls -d /ms-playwright/chromium-*/chrome-linux*/chrome | tail -1)" >> "$GITHUB_ENV"
           fi
 
-      # ---- pull requests: the latest nightly is the baseline -------------------
+      # ---- the latest nightly is the baseline -----------------------------------
+      # For a pull request, what "new" is measured against; for the nightly,
+      # the history it carries on.
       - name: find the latest nightly
-        if: github.event_name == 'pull_request'
         id: nightly
         uses: actions/github-script@v9
         with:
@@ -85,7 +87,7 @@ jobs:
             });
             core.setOutput('run', data.workflow_runs[0]?.id ?? '');
       - name: download it
-        if: github.event_name == 'pull_request' && steps.nightly.outputs.run != ''
+        if: steps.nightly.outputs.run != ''
         uses: actions/download-artifact@v8
         with:
           name: fuzz-main
@@ -123,7 +125,13 @@ jobs:
         if: steps.plan.outputs.count != '0'
         run: |
           baseline=()
-          [ -f tmp/baseline/state.json ] && baseline=(--baseline tmp/baseline/state.json)
+          if [ -f tmp/baseline/state.json ]; then
+            baseline=(--baseline tmp/baseline/state.json)
+            # The evidence of findings this sweep doesn't see again.
+            if [ -d tmp/baseline/evidence ]; then
+              mkdir -p tmp/bombadil/report && cp -R tmp/baseline/evidence tmp/bombadil/report/
+            fi
+          fi
           # 2 = a property violation; whether that's new is the gate's call.
           # Anything else (1: no server, no spec, Bombadil failing) fails here.
           # shellcheck disable=SC2086 # args is a list of flags

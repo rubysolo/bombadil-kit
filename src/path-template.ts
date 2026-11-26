@@ -14,7 +14,7 @@
  * a short number (`oauth2`, `v2`, `utf8`, `version10`) and a lone upper-case
  * word (`API`, `CSV`) name endpoints.
  */
-const isRecordSegment = (seg: string): boolean => {
+export const isRecordSegment = (seg: string): boolean => {
   if (/^\d+$/.test(seg)) return true;
   if (/^[a-z]+\d{1,2}$/.test(seg)) return false;
   if (/^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i.test(seg)) return true;

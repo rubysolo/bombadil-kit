@@ -384,7 +384,13 @@ same way and drowns everything else.
 
 A **finding** is one bug, not one violation. Its id hashes project, property,
 route and the first line the violation carried (a request, a console
-message), digits blurred, so repeats land on the same id.
+message), blurred so repeats land on the same id whatever records the run
+touched: digits, record ids by the rule routes use below (`HISTORY-IN-TRANSIT`,
+`ORD12345`, UUIDs; not constants like `FETCH_ERROR`), and an RTK cache key's
+argument (`getOrderInvoice({"orderNumber":…})` → `getOrderInvoice(…)`). A
+pull request's seed generates other records than the nightly's, and the same
+bug keeps its id. Upgrading from 0.8.0, findings whose message held such a record
+get new ids once: they show as `new`, and the old ids close on their own.
 
 A **sweep** is one report build: every run it hasn't seen yet. `run` builds
 once per invocation, so all its flows are one sweep.
@@ -472,10 +478,11 @@ everything } }`. A shared library picks flows in every app that renders it.
   `affected.always` pick every flow; so does a missing coverage map, and a
   flow the map doesn't know yet.
 
-`templates/github/fuzz.yml` wires it up: nightly on main, every flow, uploads
-the report as the baseline; on a pull request, the affected flows (about 12
-minutes in all), `--baseline` the nightly's `state.json`, and fail on new
-findings.
+`templates/github/fuzz.yml` wires it up: nightly on main, every flow, on the
+previous nightly's `state.json` (so the history adds up, and a bug one night
+missed isn't forgotten), uploads the report as the baseline; on a pull
+request, the affected flows (about 12 minutes in all), `--baseline` the
+nightly's `state.json`, and fail on new findings: ones no nightly has seen.
 
 `templates/gitlab/fuzz.gitlab-ci.yml` is the same thing for GitLab CI, over
 every project in `bombadil-kit.json` (a sweep each, one report): it finds the
