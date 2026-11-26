@@ -41,6 +41,34 @@ test('detailKey takes the first string in the snapshots, with digits blurred', (
   assert.equal(detailKey([{ name: 'horizontalOverflow', value: 76 }]), '');
 });
 
+// Issue #43: one bug, one key, whatever records the seed generated.
+const keyOf = (message: string) => detailKey([{ name: 'uncaughtExceptions', value: message }]);
+
+test('detailKey: the nightly and a PR seed name one bug the same, whatever the record in the message', () => {
+  const nightly = 'A non-serializable value was detected in the state, in the path: `api.queries.getOrderInvoice({"orderNumber":"HISTORY-IN-TRANSIT","type":"final"}).data`. Take a look';
+  const pr = 'A non-serializable value was detected in the state, in the path: `api.queries.getOrderInvoice({"orderNumber":"HFQKFREHUM","type":"preliminary"}).data`. Take a look';
+  assert.equal(keyOf(nightly), keyOf(pr));
+  assert.match(keyOf(nightly), /getOrderInvoice\(…\)\.data/);
+});
+
+test('detailKey: an RTK cache key drops its argument, object, array or string; an empty call stays', () => {
+  assert.equal(keyOf('in api.queries.getOrder("HFQKFREHUM").data'), 'in api.queries.getOrder(…).data');
+  assert.equal(keyOf('in api.queries.search([1,2]).data'), 'in api.queries.search(…).data');
+  assert.equal(keyOf('in api.queries.products(undefined).data'), 'in api.queries.products(undefined).data');
+  assert.equal(keyOf('render() failed'), 'render() failed');
+});
+
+test('detailKey: record ids in the message blur as they do in paths', () => {
+  // The same rule as routes: upper-case slugs, upper case with digits, UUIDs, long mixed ids.
+  assert.equal(keyOf('Order TEST-BASIC-ORDER not found'), keyOf('Order ACTIVE-STORE not found'));
+  assert.equal(keyOf('Order ORD12345 not found'), keyOf('Order P7 not found'));
+  assert.equal(keyOf('no user 3f9c2a10-7b1e-4c2d-9a51-0e8f6b7c2d11'), keyOf('no user 0e8f6b7c-2d11-4c2d-9a51-3f9c2a107b1e'));
+  assert.equal(keyOf('GET /orders/HISTORY-IN-TRANSIT/invoice → 500'), 'GET /orders/#/invoice → #');
+  // Error kinds and words stay: they tell bugs apart.
+  assert.notEqual(keyOf('request failed: FETCH_ERROR'), keyOf('request failed: TIMEOUT_ERROR'));
+  assert.equal(keyOf('TypeError: Cannot read properties of undefined (reading "API")'), 'TypeError: Cannot read properties of undefined (reading "API")');
+});
+
 test('detailText keeps a message and the stack the app appended under it', () => {
   const message = 'Warning: Maximum update depth exceeded. ' + 'x'.repeat(200);
   const frames = Array.from({ length: 8 }, (_, i) => `    at fn${i} (http://h/node_modules/.vite/deps/lib.js:${i}:1)`);

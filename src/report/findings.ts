@@ -1,5 +1,5 @@
 import { createHash } from 'node:crypto';
-import { templateOf } from '../path-template.ts';
+import { isRecordSegment, templateOf } from '../path-template.ts';
 
 /**
  * Pure helpers that turn Bombadil's raw trace values into stable, readable
@@ -53,15 +53,31 @@ export const detailText = (snapshots: readonly Snapshot[]): string => {
 };
 
 /**
+ * A record id in a message, by the rule paths use (isRecordSegment), except
+ * upper-case words joined by `_`: in a message those are constants
+ * (`FETCH_ERROR`, `ERR_NETWORK`) that tell bugs apart.
+ */
+const isRecordToken = (token: string): boolean => !/^[A-Z]+(?:_[A-Z]+)+$/.test(token) && isRecordSegment(token);
+
+/**
  * What tells two violations of one property on one route apart: the first
  * string in the snapshots (a request line, a console message, an exception),
- * first line only, with digits blurred so ids don't split one bug into many. Numbers and
- * booleans are measurements, not identity, and are ignored.
+ * first line only, blurred so the records a run happened to touch don't split
+ * one bug into many (a PR's seed generates other records than the nightly's):
+ * - an RTK cache key's argument, `getOrder({"orderNumber":"X"})` → `getOrder(…)`;
+ * - record ids, as in paths (`HISTORY-IN-TRANSIT`, `ORD12345`, UUIDs) → `#`;
+ * - every other run of digits → `#`.
+ * Numbers and booleans are measurements, not identity, and are ignored.
  */
 export const detailKey = (snapshots: readonly Snapshot[]): string =>
   // First line only: a stack the app appends below the message (fuzz mode)
   // would otherwise split one bug's id, and move it whenever code shifts.
-  detailText(snapshots).split('\n')[0]!.replace(/\d+/g, '#').slice(0, 160);
+  detailText(snapshots)
+    .split('\n')[0]!
+    .replace(/([\w$])\((?:\{[^()]*\}|\[[^()]*\]|"[^"()]*"|'[^'()]*')\)/g, '$1(…)')
+    .replace(/[A-Za-z0-9](?:[\w-]*[A-Za-z0-9])?/g, (token) => (isRecordToken(token) ? '#' : token))
+    .replace(/\d+/g, '#')
+    .slice(0, 160);
 
 export const findingId = (project: string, property: string, route: string, detail: string): string =>
   'F-' + createHash('sha1').update([project, property, route, detail].join('\u0000')).digest('hex').slice(0, 6);

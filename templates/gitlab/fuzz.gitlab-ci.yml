@@ -3,9 +3,11 @@
 # rules:changes paths, the image and the stage.
 #
 # Nightly (a pipeline schedule on the default branch): every flow of every
-# project, 2 minutes each. Its report artifact is the baseline for merge
+# project, 2 minutes each, on the previous nightly's state.json, so the history
+# adds up night after night. Its report artifact is the baseline for merge
 # requests: its coverage.json maps source files to the flows that render them,
-# and its state.json is what "new" is measured against.
+# and its state.json is what "new" is measured against: a finding any nightly
+# has seen isn't new.
 #
 # On a merge request: only the flows its changes touch (`bombadil-kit
 # affected`), about 12 minutes in all, reported against the latest nightly.
@@ -90,28 +92,29 @@ fuzz:
       # GitLab refuses; then take the fuzz artifact of the latest successful
       # pipeline on the branch, which is the nightly only if no other pipeline
       # has succeeded there since.
+      # The nightly downloads the previous one's too, and carries its history on.
       base=tmp/nightly/bombadil-report
-      if [ "$nightly" = 0 ]; then
-        url=""
-        if get "$api/pipelines?ref=$CI_DEFAULT_BRANCH&source=schedule&status=success&per_page=1" > tmp/pipelines.json; then
-          pipeline="$(node -p "(require('./tmp/pipelines.json')[0] || {}).id || ''")"
-          if [ -n "$pipeline" ] && get "$api/pipelines/$pipeline/jobs?scope[]=success&per_page=100" > tmp/jobs.json; then
-            job="$(node -p "(require('./tmp/jobs.json').find((j) => j.name === 'fuzz') || {}).id || ''")"
-            [ -n "$job" ] && url="$api/jobs/$job/artifacts"
-          fi
-        else
-          echo "baseline: this GitLab won't list pipelines for CI_JOB_TOKEN; trying the latest successful $CI_DEFAULT_BRANCH pipeline"
-          url="$api/jobs/artifacts/$CI_DEFAULT_BRANCH/download?job=fuzz"
+      url=""
+      if get "$api/pipelines?ref=$CI_DEFAULT_BRANCH&source=schedule&status=success&per_page=1" > tmp/pipelines.json; then
+        pipeline="$(node -p "(require('./tmp/pipelines.json')[0] || {}).id || ''")"
+        if [ -n "$pipeline" ] && get "$api/pipelines/$pipeline/jobs?scope[]=success&per_page=100" > tmp/jobs.json; then
+          job="$(node -p "(require('./tmp/jobs.json').find((j) => j.name === 'fuzz') || {}).id || ''")"
+          [ -n "$job" ] && url="$api/jobs/$job/artifacts"
         fi
-        if [ -n "$url" ] && get "$url" -o tmp/nightly.zip; then
-          command -v unzip > /dev/null || { apt-get update -qq && apt-get install -y -qq unzip > /dev/null; }
-          unzip -q -o tmp/nightly.zip -d tmp/nightly
-        fi
-        if [ -f "$base/state.json" ]; then
-          echo "baseline: the nightly's report"
-        else
-          echo "baseline: no nightly report to download; every flow runs, and nothing is gated"
-        fi
+      else
+        echo "baseline: this GitLab won't list pipelines for CI_JOB_TOKEN; trying the latest successful $CI_DEFAULT_BRANCH pipeline"
+        url="$api/jobs/artifacts/$CI_DEFAULT_BRANCH/download?job=fuzz"
+      fi
+      if [ -n "$url" ] && get "$url" -o tmp/nightly.zip; then
+        command -v unzip > /dev/null || { apt-get update -qq && apt-get install -y -qq unzip > /dev/null; }
+        unzip -q -o tmp/nightly.zip -d tmp/nightly
+      fi
+      if [ -f "$base/state.json" ]; then
+        echo "baseline: the nightly's report"
+      elif [ "$nightly" = 0 ]; then
+        echo "baseline: no nightly report to download; every flow runs, and nothing is gated"
+      else
+        echo "baseline: no earlier nightly report; the history starts here"
       fi
 
       # ---- pick the flows: `<project> <flow>` per line -----------------------
@@ -167,6 +170,8 @@ fuzz:
       args=(--fail-on none)
       if [ -f "$base/state.json" ]; then
         args=(--baseline "$base/state.json" --fail-on "$([ "$nightly" = 0 ] && echo new || echo none)")
+        # The evidence of findings this sweep doesn't see again.
+        if [ -d "$base/evidence" ]; then mkdir -p "$OUT/report" && cp -R "$base/evidence" "$OUT/report/"; fi
       fi
       gate=0
       npx bombadil-kit report "${args[@]}" || gate=$?
