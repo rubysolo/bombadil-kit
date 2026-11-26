@@ -44,7 +44,7 @@ test('buildReport derives statuses, the property matrix and route coverage', () 
 
   assert.equal(report.schema, 'bombadil-report/v1');
   const web = { projects: ['web'], actions: 100, routes: [2, 3], extra_routes: 0 };
-  assert.deepEqual(report.summary, { new: 0, open: 1, quiet: 1, closed: 0, actions: 100, routes: [2, 3], latest_sweep: web, all: web });
+  assert.deepEqual(report.summary, { new: 0, open: 1, quiet: 1, closed: 0, causes: { new: 0, open: 1, quiet: 1, closed: 0 }, actions: 100, routes: [2, 3], latest_sweep: web, all: web });
 
   const p = report.projects[0]!;
   assert.equal(p.name, 'web');

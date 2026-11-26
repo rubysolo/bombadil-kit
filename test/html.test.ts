@@ -2,6 +2,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import { renderHtml } from '../src/report/html.ts';
 import type { Report } from '../src/report/report.ts';
+import { rendered } from './helpers.ts';
 
 const report = {
   schema: 'bombadil-report/v1',
@@ -28,18 +29,6 @@ test('rotated matrix headers are centred in their column', () => {
   assert.match(html, /th\.v\{[^}]*text-align:center/);
   assert.match(html, /<th class="v"><span>/);
 });
-
-// Runs the page's script against a stub DOM and returns what it renders at `hash`.
-const rendered = (r: Report, hash: string): string => {
-  const html = renderHtml(r);
-  const json = /<script type="application\/json" id="report">([\s\S]*?)<\/script>/.exec(html)![1]!;
-  const script = /<script>(const TITLE[\s\S]*?)<\/script>/.exec(html)![1]!;
-  const app = { innerHTML: '' };
-  const document = { getElementById: (id: string) => (id === 'report' ? { textContent: json } : app), addEventListener: () => {} };
-  const window = { addEventListener: () => {}, scrollTo: () => {} };
-  new Function('document', 'window', 'location', script)(document, window, { hash });
-  return app.innerHTML;
-};
 
 const project = (api?: Report['projects'][number]['api']) =>
   ({

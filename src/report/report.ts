@@ -1,6 +1,7 @@
 import type { RunTarget } from './record.ts';
 import type { ProjectInfo } from './project.ts';
-import type { Snapshot } from './findings.ts';
+import { causeId, type Snapshot } from './findings.ts';
+import { appFrame, frameLabel } from './stack.ts';
 import type { ApiCoverage, Step } from './runs.ts';
 import type { CallOutcome } from '../page-protocol.ts';
 import { mergeApi, statusOf, type FindingRecord, type FlowMilestones, type RunInfo, type State, type Status } from './state.ts';
@@ -23,6 +24,10 @@ export interface ReportFinding {
   url: string;
   /** The first string the violation carried: a request line, a console message, an exception. */
   summary: string;
+  /** The first frame of its stack in the project's code: `file (function)`. No line: Bombadil's rewrite of the script moved it. Absent without one. */
+  frame?: string;
+  /** Its cause (report.json `causes`): the findings one bug makes on every route it fails on share it. */
+  cause: string;
   first_seen: string;
   last_seen: string;
   /** Ids of the sweeps it was seen in. */
@@ -36,6 +41,30 @@ export interface ReportFinding {
   /** inspect: Bombadil's viewer on the whole run (every state), from the repo root. */
   evidence: { frames: string[]; run_dir: string; inspect: string };
   snapshots: Snapshot[];
+}
+
+/**
+ * One bug, as far as the report can tell: findings of one property with the
+ * same message (blurred, as ids are) and the same first app file, on any route.
+ *   new     seen in the latest sweep, and none of its findings in an earlier one
+ *   open    seen in the latest sweep, and before
+ *   quiet   not seen in the latest sweep
+ *   closed  every finding closed
+ */
+export interface ReportCause {
+  id: string;
+  project: string;
+  property: string;
+  status: Status;
+  /** The latest-seen finding's summary. */
+  summary: string;
+  frame?: string;
+  /** Its findings' ids, in report order. */
+  findings: string[];
+  /** The routes they were on, sorted. */
+  routes: string[];
+  first_seen: string;
+  last_seen: string;
 }
 
 export interface ReportEndpoint {
@@ -102,6 +131,8 @@ export interface Report {
   sweep: { id: number; at: string; commits: string[] };
   summary: {
     new: number; open: number; quiet: number; closed: number;
+    /** The same counts by cause (absent in a report built before it). */
+    causes?: Record<Status, number>;
     /** The latest sweep's projects alone: `latest_sweep.actions` and `.routes`. */
     actions: number;
     routes: [number, number];
@@ -112,6 +143,8 @@ export interface Report {
   };
   projects: ReportProject[];
   findings: ReportFinding[];
+  /** Findings grouped by cause (absent in a report built before it). */
+  causes?: ReportCause[];
 }
 
 export interface BuildOptions {
@@ -190,12 +223,42 @@ export const summaryLine = (r: Report): string => {
   const s = r.summary;
   const all = s.all;
   const routes = all ? all.routes : s.routes;
-  return `sweep ${r.sweep.id}: ${s.new} new, ${s.open} open, ${s.quiet} quiet, ${s.closed} closed · ${routes[0]}/${routes[1]} routes` +
+  // When several findings are one bug, how many bugs the new and open ones are.
+  const live = s.causes ? s.causes.new + s.causes.open : s.new + s.open;
+  const causes = live < s.new + s.open ? ` (${live} cause${live === 1 ? '' : 's'})` : '';
+  return `sweep ${r.sweep.id}: ${s.new} new, ${s.open} open${causes}, ${s.quiet} quiet, ${s.closed} closed · ${routes[0]}/${routes[1]} routes` +
     (all?.extra_routes ? ` (+${all.extra_routes} not in the route list)` : '') +
     (all && all.projects.length > 1 ? ` across ${all.projects.length} projects` : '');
 };
 
 const ORDER: Record<Status, number> = { new: 0, open: 1, quiet: 2, closed: 3 };
+
+/** Findings (in report order) grouped by cause, in the same order: status, then latest seen. */
+export const groupCauses = (findings: readonly ReportFinding[], latestSweep: number): ReportCause[] => {
+  const groups = new Map<string, ReportFinding[]>();
+  for (const f of findings) groups.set(f.cause, [...(groups.get(f.cause) ?? []), f]);
+  return [...groups.entries()]
+    .map(([id, members]): ReportCause => {
+      const seen = members.some((f) => f.status === 'new' || f.status === 'open');
+      const status: Status = seen
+        ? members.some((f) => f.sweeps.some((s) => s < latestSweep)) ? 'open' : 'new'
+        : members.every((f) => f.status === 'closed') ? 'closed' : 'quiet';
+      const latest = members.reduce((a, b) => (b.last_seen > a.last_seen ? b : a));
+      return {
+        id,
+        project: latest.project,
+        property: latest.property,
+        status,
+        summary: latest.summary,
+        ...(latest.frame ? { frame: latest.frame } : {}),
+        findings: members.map((f) => f.id),
+        routes: [...new Set(members.map((f) => f.route))].sort(),
+        first_seen: members.reduce((a, f) => (f.first_seen < a ? f.first_seen : a), latest.first_seen),
+        last_seen: latest.last_seen,
+      };
+    })
+    .sort((a, b) => ORDER[a.status] - ORDER[b.status] || b.last_seen.localeCompare(a.last_seen));
+};
 
 export const buildReport = (state: State, info: Record<string, ProjectInfo>, opts: BuildOptions): Report => {
   const latest = state.sweeps.at(-1);
@@ -209,6 +272,8 @@ export const buildReport = (state: State, info: Record<string, ProjectInfo>, opt
     .map((f) => {
       const { status, clean } = statusOf(state, f.id);
       const run = runInfo(f.last.run);
+      // From the stack in the summary, so state.json from before causes has them too.
+      const frame = appFrame(f.last.summary);
       return {
         schema: 'bombadil-report/v1' as const,
         id: f.id,
@@ -219,6 +284,8 @@ export const buildReport = (state: State, info: Record<string, ProjectInfo>, opt
         route: f.route,
         url: f.last.url,
         summary: f.last.summary,
+        ...(frame ? { frame: frameLabel(frame) } : {}),
+        cause: causeId(f.project, f.property, f.route, f.detail, frame?.file),
         first_seen: f.first_seen,
         last_seen: f.last_seen,
         sweeps: f.sweeps,
@@ -286,7 +353,9 @@ export const buildReport = (state: State, info: Record<string, ProjectInfo>, opt
     };
   });
 
+  const causes = groupCauses(findings, latest.id);
   const count = (s: Status) => findings.filter((f) => f.status === s).length;
+  const countCauses = (s: Status) => causes.filter((c) => c.status === s).length;
   const latestSweep = scope(projects.filter((p) => p.last_sweep === latest.id));
   const all = scope(projects);
   return {
@@ -298,6 +367,7 @@ export const buildReport = (state: State, info: Record<string, ProjectInfo>, opt
       open: count('open'),
       quiet: count('quiet'),
       closed: count('closed'),
+      causes: { new: countCauses('new'), open: countCauses('open'), quiet: countCauses('quiet'), closed: countCauses('closed') },
       actions: latestSweep.actions,
       routes: latestSweep.routes,
       latest_sweep: latestSweep,
@@ -305,5 +375,6 @@ export const buildReport = (state: State, info: Record<string, ProjectInfo>, opt
     },
     projects,
     findings,
+    causes,
   };
 };

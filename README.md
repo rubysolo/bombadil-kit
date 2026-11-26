@@ -102,6 +102,7 @@ npx bombadil-kit run --project web --no-report  # leave the runs for one `report
 npx bombadil-kit run --width 1280 --height 800 # desktop
 npx bombadil-kit list                          # the flows
 npx bombadil-kit report --fail-on new          # exit 1 if the latest sweep found something new
+npx bombadil-kit report --fail-on new --fail-by cause  # ...a new bug, not a known one on another route
 npx bombadil browser inspect tmp/bombadil/runs/web/<run>/trace.bin   # step through one run
 ```
 
@@ -377,7 +378,7 @@ same way and drowns everything else.
 |---|---|
 | `index.html` | people. Self-contained, opens from `file://`. Repo → project → finding. |
 | `findings.ndjson` | agents. One finding per line, `bombadil-report/v1`. |
-| `report.json` | agents and the page: summary, projects (property matrix, route coverage, API coverage, milestones, sweep history), findings. |
+| `report.json` | agents and the page: summary, projects (property matrix, route coverage, API coverage, milestones, sweep history), findings, causes. |
 | `state.json` | the history every report is derived from. Keep it between runs. |
 | `coverage.json` | per flow, the source files it rendered (`bombadil-coverage/v1`). |
 | `evidence/<id>/` | the last screenshots before each finding's latest violation. |
@@ -391,6 +392,28 @@ argument (`getOrderInvoice({"orderNumber":…})` → `getOrderInvoice(…)`). A
 pull request's seed generates other records than the nightly's, and the same
 bug keeps its id. Upgrading from 0.8.0, findings whose message held such a record
 get new ids once: they show as `new`, and the old ids close on their own.
+
+A **cause** groups one bug's findings across routes: the same property, the
+same blurred message, and the same first frame of its stack in the app's own
+code (the file, not the line, which moves whenever code above it does). A
+component every page renders that throws is one cause however many routes it
+fails on. Each finding's `cause` is its cause's id (`C-…`); `report.json`'s
+`causes` lists them with their findings and routes, and `summary.causes`
+counts them by status. A cause is `new` until any of its findings was seen in
+an earlier sweep, and `closed` once all of them are. The page lists each
+cause once ("1 cause · 6 findings: /, /cart, …"), and a finding links the
+rest of its cause. `report --fail-by cause` makes `--fail-on` count causes:
+a pull request that reaches a known bug on a route the nightly didn't isn't
+new. A finding's `frame` names that first app frame, `src/pages/Product.tsx
+(Product)`: the file the dev server sent and the function. It has no line:
+Bombadil rewrites every script it instruments, so a stack's lines and columns
+are positions in its rewrite, and the app's source maps don't cover them.
+Stacks through library code only (an error thrown in RTK's middleware) have
+no frame, and their cause is the message alone. A finding with neither a
+message nor a frame (a blank page) is its own cause: nothing says it's the
+same bug as another route's. So do findings whose message
+holds generated text, like a product name: each name is its own finding and
+its own cause.
 
 A **sweep** is one report build: every run it hasn't seen yet. `run` builds
 once per invocation, so all its flows are one sweep.
