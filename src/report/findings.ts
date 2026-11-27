@@ -82,6 +82,22 @@ export const detailKey = (snapshots: readonly Snapshot[]): string =>
 export const findingId = (project: string, property: string, route: string, detail: string): string =>
   'F-' + createHash('sha1').update([project, property, route, detail].join('\u0000')).digest('hex').slice(0, 6);
 
+/**
+ * What one bug's findings share, whichever route each was on: the property,
+ * the message as the finding id blurs it (`detail`), and the file of the first
+ * app frame of its stack (just the file: a line moves whenever code above it
+ * does). One throw in a component every page renders is one cause, however
+ * many routes it fails on. A finding with no message and no app frame is
+ * its own cause.
+ */
+export const causeId = (project: string, property: string, route: string, detail: string, file = ''): string =>
+  'C-' + createHash('sha1')
+    // With neither a message nor a frame, nothing says two routes' findings
+    // are one bug (a blank page here, an empty one there): each is its own.
+    .update([project, property, detail, file, detail === '' && file === '' ? route : ''].join('\u0000'))
+    .digest('hex')
+    .slice(0, 6);
+
 const clip = (s: string, n = 40): string => (s.length > n ? s.slice(0, n - 1) + '…' : s);
 
 type Fingerprint = {

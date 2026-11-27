@@ -163,9 +163,9 @@ const K = { new: 'var(--m)', open: 'var(--m)', quiet: 'var(--c)', closed: 'var(-
 const when = (iso) => (iso ? iso.replace('T', ' ').slice(0, 16) : '');
 const isOpen = (f) => f.status === 'new' || f.status === 'open';
 const titleOf = (f) => f.property + ' on ' + f.route;
-// A headline: the first sentence of what the violation carried, at most 140 characters.
+// A headline: the first sentence of what the violation carried's first line (not its stack), at most 140 characters.
 const headline = (f) => {
-  const first = (f.summary || '').split(/(?<=[.!?])\s/)[0].trim();
+  const first = (f.summary || '').split('\n')[0].split(/(?<=[.!?])\s/)[0].trim();
   if (!first) return titleOf(f);
   return first.length > 140 ? first.slice(0, 139) + '…' : first;
 };
@@ -198,12 +198,32 @@ const header = (crumbs, right) =>
 const home = '<a href="#/">' + esc(TITLE) + ' ▸ FUZZ</a>';
 const sweepLine = '<span class="dim">sweep ' + R.sweep.id + ' · ' + esc(R.sweep.commits.join(', ')) + ' · ' + esc(when(R.sweep.at)) + '</span>';
 
-const caseRow = (f) =>
-  '<a class="case" style="--k:' + K[f.status] + '" href="#/f/' + enc(f.id) + '">' +
+// Findings by cause (report.json causes): one bug's findings on every route it failed on. A report from before causes has each finding alone.
+const causeOf = (f) => (R.causes || []).find((c) => c.id === f.cause);
+const plural = (n, one) => n + ' ' + one + (n === 1 ? '' : 's');
+// Findings grouped by cause, in the order their first finding comes.
+const byCause = (list) => {
+  const groups = new Map();
+  for (const f of list) {
+    const k = f.cause || f.id;
+    if (!groups.has(k)) groups.set(k, []);
+    groups.get(k).push(f);
+  }
+  return [...groups.values()];
+};
+
+// One row per cause: its first finding, and how many more of the same bug there are, on which routes.
+const caseRow = (group) => {
+  const f = group[0];
+  const routes = [...new Set(group.map((g) => g.route))];
+  return '<a class="case" style="--k:' + K[f.status] + '" href="#/f/' + enc(f.id) + '">' +
   '<span class="top"><span class="id">' + esc(f.id) + '</span><span class="dim">' + esc(f.project) + '</span></span>' +
-  '<span class="t">' + esc(titleOf(f)) + '</span>' +
+  '<span class="t">' + esc(group.length > 1 ? f.property + ' on ' + plural(routes.length, 'route') : titleOf(f)) + '</span>' +
   (f.summary ? '<span class="s">' + esc(f.summary) + '</span>' : '') +
+  (group.length > 1 ? '<span class="s dim">1 cause · ' + plural(group.length, 'finding') + ': ' + esc(routes.join(', ')) + '</span>' : '') +
+  (f.frame ? '<span class="s dim">' + esc(f.frame) + '</span>' : '') +
   '<span>' + squares(f) + '<span class="dim" style="font-size:12px;margin-left:6px">' + f.seen_in + '/' + f.of_sweeps + ' sweeps</span></span></a>';
+};
 
 function repo() {
   const s = R.summary;
@@ -227,9 +247,12 @@ function repo() {
     return '<div style="display:flex;align-items:center;gap:10px"><div class="meter" style="flex:1;min-width:90px;height:6px"><i style="width:' + Math.round((100 * c.reached) / Math.max(1, c.known)) + '%"></i></div><span class="dim">' + c.reached + '/' + c.known + '</span>' +
       (c.extra ? ' <small class="dim" title="' + unlisted(c.extra) + '">+' + c.extra + '</small>' : '') + '</div>';
   };
-  const lane = (status, label, hint, list) =>
-    '<section class="panel lane" style="--k:' + K[status] + '"><div class="head"><h2>' + label + ' ' + list.length + '</h2><span class="dim" style="font-size:12px">' + hint + '</span></div>' +
-    (list.length ? list.map(caseRow).join('') : '<div class="empty">none</div>') + '</section>';
+  const lane = (status, label, hint, list, max) => {
+    const groups = byCause(list);
+    return '<section class="panel lane" style="--k:' + K[status] + '"><div class="head"><h2>' + label + ' ' + list.length + '</h2><span class="dim" style="font-size:12px">' + hint +
+      (groups.length < list.length ? ' · ' + plural(groups.length, 'cause') : '') + '</span></div>' +
+      (groups.length ? groups.slice(0, max).map(caseRow).join('') : '<div class="empty">none</div>') + '</section>';
+  };
   const by = (st) => R.findings.filter((f) => f.status === st);
   return header(home, sweepLine + '<span class="m">' + (s.new + s.open) + ' OPEN · ' + s.new + ' NEW</span>') +
     '<section class="stats">' +
@@ -246,7 +269,7 @@ function repo() {
     lane('new', 'New', 'first seen this sweep', by('new')) +
     lane('open', 'Open', 'seen in 2+ sweeps', by('open')) +
     lane('quiet', 'Quiet', 'not seen lately', by('quiet')) +
-    lane('closed', 'Closed', '3 clean sweeps', by('closed').slice(0, 12)) +
+    lane('closed', 'Closed', '3 clean sweeps', by('closed'), 12) +
     '</section>' +
     '<footer class="foot">' + cmd('jq -c \'select(.status=="open" or .status=="new")\' findings.ndjson') + '<span>report.json · findings.ndjson · state.json · generated ' + esc(when(R.generated_at)) + '</span></footer>';
 }
@@ -348,7 +371,7 @@ function finding(id, mode) {
     '<nav class="toggle" aria-label="View"><a class="' + (json ? '' : 'on') + '" href="#/f/' + enc(f.id) + '">HUMAN</a><a class="' + (json ? 'on' : '') + '" href="#/f/' + enc(f.id) + '/json">AGENT</a></nav>');
   const banner = '<section class="panel tick banner" style="--k:' + k + '"><div style="display:flex;flex-direction:column;gap:6px;flex:1 1 520px;min-width:0">' +
     '<span class="kick">' + esc(f.status) + ' · ' + esc(f.property) + '</span><h1>' + esc(headline(f)) + '</h1>' +
-    '<span class="dim">' + esc(f.route) + ' · first ' + esc(when(f.first_seen)) + ' · last ' + esc(when(f.last_seen)) + '</span></div>' +
+    '<span class="dim">' + esc(f.route) + (f.frame ? ' · ' + esc(f.frame) : '') + ' · first ' + esc(when(f.first_seen)) + ' · last ' + esc(when(f.last_seen)) + '</span></div>' +
     '<div class="nums"><div><b>' + f.seen_in + '/' + f.of_sweeps + '</b><span>SWEEPS</span></div><div><b>' + f.runs_hit + '</b><span>RUNS HIT</span></div><div><b>' + (f.status === 'quiet' || f.status === 'closed' ? f.clean_sweeps : f.repro.steps.length) + '</b><span>' + (f.status === 'quiet' || f.status === 'closed' ? 'CLEAN SWEEPS' : 'STEPS SHOWN') + '</span></div></div></section>';
   if (json) {
     return top + banner + '<section class="panel pad term" style="display:flex;flex-direction:column;gap:10px"><div class="foot">' + cmd('jq \'select(.id=="' + f.id + '")\' findings.ndjson') + '<span>' + esc(f.schema) + '</span></div><pre class="json">' + esc(JSON.stringify(f, null, 2)) + '</pre></section>';
@@ -360,6 +383,12 @@ function finding(id, mode) {
     return '<figure><a class="zoom" href="' + esc(src) + '" data-frame="' + i + '" aria-label="' + alt + ', full size"><img src="' + esc(src) + '" alt="' + alt + '" loading="lazy"></a><figcaption>' + frameLabel(i, all.length) + '</figcaption></figure>';
   }).join('');
   const snaps = f.snapshots.map((s) => '<div class="kv"><span class="dim">' + esc(s.name ?? '') + '</span><code>' + esc(typeof s.value === 'string' ? s.value : JSON.stringify(s.value)) + '</code></div>').join('');
+  const cause = causeOf(f);
+  const siblings = cause ? cause.findings.filter((x) => x !== f.id).map((x) => R.findings.find((g) => g.id === x)).filter(Boolean) : [];
+  const same = siblings.length
+    ? '<section class="panel pad"><h2>Same cause</h2><div class="dim" style="font-size:12px;margin:4px 0 6px">' + esc(cause.id) + ' · ' + cause.status + ' · ' + plural(cause.findings.length, 'finding') + ' on ' + plural(cause.routes.length, 'route') + '</div>' +
+      siblings.map((g) => '<div class="row" style="padding:6px 0"><a href="#/f/' + enc(g.id) + '">' + esc(g.id) + '</a><span class="dim">' + esc(g.route) + ' · ' + g.status + '</span></div>').join('') + '</section>'
+    : '';
   const hist = sweepsOf(f).slice().reverse().map((h) => '<div class="row" style="padding:6px 0"><span><span class="sq' + (f.sweeps.includes(h.sweep) ? ' on' : '') + '" style="--k:' + k + '"></span> sweep ' + h.sweep + '</span><span class="dim">' + esc(when(h.at)) + '</span></div>').join('');
   return top + banner +
     '<div class="cols"><div class="main">' +
@@ -370,6 +399,7 @@ function finding(id, mode) {
     (frames ? '<section class="panel pad" style="display:flex;flex-direction:column;gap:12px"><h2>Evidence</h2><div class="frames">' + frames + '</div></section>' : '') +
     '</div><aside class="side">' +
     '<section class="panel pad"><h2>What the property saw</h2>' + (snaps || '<div class="dim">nothing captured</div>') + '</section>' +
+    same +
     '<section class="panel pad"><h2>History</h2>' + hist + '</section>' +
     '<section class="panel pad" style="display:flex;flex-direction:column;gap:6px"><h2>Run</h2><span>' + esc(f.repro.run) + '</span><span class="dim">seed ' + f.repro.seed + ' · ' + esc(targetOf(f.target)) + '</span>' +
     '<span class="dim" style="margin-top:6px">every state of the run, step by step</span>' + cmd(f.evidence.inspect) + '</section>' +

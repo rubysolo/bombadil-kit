@@ -10,6 +10,8 @@ import { applySweep, emptyState, type FindingRecord, type State } from './state.
 import type { TraceReader } from '../trace.ts';
 
 export type FailOn = 'none' | 'new' | 'open';
+/** What `failOn` counts: findings (the default), or causes, so a known bug on a route it hadn't reached yet isn't new. */
+export type FailBy = 'finding' | 'cause';
 
 export interface GenerateOptions {
   /** Where `bombadil-kit run` puts runs: `<runsRoot>/<project>/<run>/`. */
@@ -20,6 +22,7 @@ export interface GenerateOptions {
   repoRoot: string;
   now: string;
   failOn?: FailOn;
+  failBy?: FailBy;
   title?: string;
   /**
    * Where to start the history when `out` has none yet: main's nightly
@@ -107,7 +110,7 @@ const build = (opts: GenerateOptions): { report: Report; exitCode: number } => {
     JSON.stringify({ schema: 'bombadil-coverage/v1', generated_at: opts.now, projects }, null, 2) + '\n',
   );
 
-  const failing =
-    opts.failOn === 'new' ? report.summary.new : opts.failOn === 'open' ? report.summary.new + report.summary.open : 0;
+  const counts = opts.failBy === 'cause' ? report.summary.causes! : report.summary;
+  const failing = opts.failOn === 'new' ? counts.new : opts.failOn === 'open' ? counts.new + counts.open : 0;
   return { report, exitCode: failing > 0 ? 1 : 0 };
 };

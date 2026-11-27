@@ -10,7 +10,7 @@
 //   bombadil-kit run --project a --no-report &      parallel sweeps: then one `report`
 //   bombadil-kit run --baseline main/state.json --no-sandbox   (CI)
 //   bombadil-kit list                        the flows
-//   bombadil-kit report [--fail-on new|open] [--baseline state.json]
+//   bombadil-kit report [--fail-on new|open] [--fail-by finding|cause] [--baseline state.json]
 //   bombadil-kit affected [--base origin/main] [--files a.tsx,b.ts] [--coverage coverage.json] [--json]
 //   bombadil-kit affected --all              every project (the default with several): `<project> <flow>`
 //
@@ -23,7 +23,7 @@ import { fileURLToPath } from 'node:url';
 import { parseArgs } from 'node:util';
 import { loadConfig, pickProject, projectRoutes, readFlows, type Loaded, type ProjectConfig } from './config.ts';
 import { projectAffected } from './affected/project.ts';
-import { generate, type FailOn } from './report/generate.ts';
+import { generate, type FailBy, type FailOn } from './report/generate.ts';
 import { summaryLine } from './report/report.ts';
 import { run } from './runner/run.ts';
 
@@ -118,18 +118,22 @@ const cmdReport = (loaded: Loaded, argv: string[]) => {
       runs: { type: 'string', default: join(loaded.out, 'runs') },
       out: { type: 'string', default: join(loaded.out, 'report') },
       'fail-on': { type: 'string', default: 'none' },
+      'fail-by': { type: 'string', default: 'finding' },
       title: { type: 'string', default: loaded.config.title ?? 'bombadil' },
       baseline: { type: 'string' },
     },
   });
   const failOn = values['fail-on'] as FailOn;
   if (!['none', 'new', 'open'].includes(failOn)) throw new Error(`--fail-on must be none, new or open, not ${failOn}`);
+  const failBy = values['fail-by'] as FailBy;
+  if (!['finding', 'cause'].includes(failBy)) throw new Error(`--fail-by must be finding or cause, not ${failBy}`);
   const { report, exitCode } = generate({
     runsRoot: resolve(values.runs),
     out: resolve(values.out),
     repoRoot: loaded.root,
     now: new Date().toISOString(),
     failOn,
+    failBy,
     title: values.title,
     baseline: values.baseline && resolve(values.baseline),
     routes: projectRoutes(loaded),

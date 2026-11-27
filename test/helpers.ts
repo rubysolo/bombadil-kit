@@ -3,6 +3,8 @@ import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { buildRun, writeRunRecord } from '../src/report/record.ts';
 import { TRACE_FILE, type TraceReader, type TraceRow } from '../src/trace.ts';
+import { renderHtml } from '../src/report/html.ts';
+import type { Report } from '../src/report/report.ts';
 
 // Bombadil timestamps are microseconds since the epoch.
 export const T0 = Date.UTC(2026, 10, 19, 19, 26, 0) * 1000;
@@ -134,3 +136,18 @@ export const writeRun = (root: string, run: RunSpec): string => {
 };
 
 export const tmp = (): string => mkdtempSync(join(tmpdir(), 'fuzz-report-'));
+
+// A source map's VLQ, encoded the way bundlers do: for building fixtures.
+
+
+// Runs the page's script against a stub DOM and returns what it renders at `hash`.
+export const rendered = (r: Report, hash: string): string => {
+  const html = renderHtml(r);
+  const json = /<script type="application\/json" id="report">([\s\S]*?)<\/script>/.exec(html)![1]!;
+  const script = /<script>(const TITLE[\s\S]*?)<\/script>/.exec(html)![1]!;
+  const app = { innerHTML: '' };
+  const document = { getElementById: (id: string) => (id === 'report' ? { textContent: json } : app), addEventListener: () => {} };
+  const window = { addEventListener: () => {}, scrollTo: () => {} };
+  new Function('document', 'window', 'location', script)(document, window, { hash });
+  return app.innerHTML;
+};

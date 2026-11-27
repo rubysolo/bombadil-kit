@@ -44,3 +44,10 @@ test('cli: another command that fails exits 2, not 1', () => {
   assert.match(r.stderr, /no runs under/);
   assert.equal(r.status, 2);
 });
+
+test('cli: report --fail-by takes finding or cause, and anything else is an error (2)', () => {
+  const r = kit(repo(), 'report', '--fail-on', 'new', '--fail-by', 'route');
+  assert.match(r.stderr, /--fail-by must be finding or cause, not route/);
+  assert.equal(r.status, 2);
+  assert.match(kit(repo(), '--help').stderr, /--fail-by finding\|cause/);
+});
